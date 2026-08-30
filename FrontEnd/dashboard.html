@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="config.js"></script>
     <style>
         * {
             margin: 0;
@@ -337,8 +338,8 @@
     </div>
 
     <script>
-        const ORDER_API_URL = 'http://localhost:3000/order';
-        const USER_API_URL = 'http://localhost:3000/user';
+        const ORDER_API_URL = CONFIG.API_BASE + '/order';
+        const USER_API_URL = CONFIG.API_BASE + '/user';
 
         // ============================
         // TABS AND USER INFO

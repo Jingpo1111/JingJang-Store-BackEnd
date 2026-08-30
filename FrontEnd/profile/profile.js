@@ -3,7 +3,7 @@
 // ============================================================
 
 // ✅ NodeJS Backend API (replaces Google Apps Script)
-const API_BASE_PROFILE  = 'http://localhost:3000';
+const API_BASE_PROFILE  = CONFIG.API_BASE;
 const ORDER_API_BASE    = API_BASE_PROFILE + '/order'; // /order, /order/user/:id
 const AUTH_API_BASE     = API_BASE_PROFILE + '/user';  // /user/login, /user/change-password
 const OTP_API_BASE      = API_BASE_PROFILE + '/otp';   // /otp/generate, /otp/verify

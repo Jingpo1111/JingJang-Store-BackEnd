@@ -2,7 +2,7 @@
 // 📌 login.js — Login/Register with OTP Email Verification
 // ============================================================
 // ✅ NodeJS Backend API (replaces Google Apps Script)
-const API_BASE   = 'http://localhost:3000';
+const API_BASE   = CONFIG.API_BASE;
 const AUTH_BASE  = API_BASE + '/user';    // /user/login, /user/register, etc.
 const OTP_BASE   = API_BASE + '/otp';     // /otp/generate, /otp/verify
 

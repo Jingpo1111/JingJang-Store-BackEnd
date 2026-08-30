@@ -34,7 +34,7 @@ function previewReceipt(event) {
 async function submitOrder(event) {
     event.preventDefault();
 
-    const API_URL = 'http://localhost:3000/order';
+    const API_URL = CONFIG.API_BASE + '/order';
 
     const submitBtn = document.querySelector('.submit-btn');
     submitBtn.innerText = 'Processing... Please wait';
