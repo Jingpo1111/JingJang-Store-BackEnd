@@ -1,0 +1,107 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background-color: #f4f7f6;
+    color: #2c3e50;
+    line-height: 1.6;
+}
+
+.about-container {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px;
+    animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.about-header {
+    text-align: center;
+    padding: 60px 30px;
+    background: linear-gradient(135deg, #3b665b, #2c4d44);
+    color: white;
+    border-radius: 16px;
+    margin-bottom: 40px;
+    box-shadow: 0 10px 30px rgba(59, 102, 91, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.about-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
+    transform: rotate(30deg);
+}
+
+.about-header h1 {
+    font-size: 36px;
+    margin-bottom: 15px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    position: relative;
+    z-index: 1;
+}
+
+.about-content {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+.about-card {
+    background: #ffffff;
+    padding: 30px;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.05);
+    border-left: 6px solid #3b665b;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.about-card:hover {
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+}
+
+.about-card h2 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.about-card p {
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 10px;
+    line-height: 1.8;
+}
+
+/* សម្រាប់អេក្រង់ទូរស័ព្ទដៃ */
+@media (max-width: 768px) {
+    .about-header {
+        padding: 40px 20px;
+        border-radius: 12px;
+    }
+
+    .about-header h1 {
+        font-size: 28px;
+    }
+
+    .about-card {
+        padding: 25px;
+        border-radius: 12px;
+    }
+}

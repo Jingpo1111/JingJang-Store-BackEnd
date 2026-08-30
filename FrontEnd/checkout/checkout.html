@@ -1,0 +1,75 @@
+<div id="checkout-modal" class="modal-overlay">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closeCheckout()">✖</span>
+        <h2>Checkout & Payment</h2>
+
+        <div class="payment-info">
+            <p>Total to Pay: <strong style="color: #e74c3c;">$<span id="checkout-total-price">0.00</span></strong></p>
+
+            <div style="margin: 15px 0; font-size: 16px; display: flex; flex-direction: column; align-items: center;">
+                <p style="margin-bottom: 8px;">Method:</p>
+
+                <div class="custom-select-box" onclick="toggleBankMenu()">
+                    <div id="selected-bank">
+                        <img src="img/ABA.png" class="bank-icon"> ABA
+                    </div>
+                    <div id="bank-dropdown" class="bank-options" style="display: none;">
+                        <div onclick="chooseBank('aba', 'img/ABA.png', 'ABA')">
+                            <img src="img/ABA.png" class="bank-icon"> ABA
+                        </div>
+                        <div onclick="chooseBank('ac', 'img/AC.png', 'ACLEDA')">
+                            <img src="img/AC.png" class="bank-icon"> ACLEDA
+                        </div>
+                    </div>
+                </div>
+
+                <a id="payment-link" href="aba://pay" target="_blank"
+                    style="display: inline-block; margin-top: 10px; color: #005bb5; font-weight: bold; text-decoration: none;">
+                    🔗 Open ABA Link
+                </a>
+            </div>
+
+            <div class="qr-code-section">
+                <p>Scan QR to Pay:</p>
+                <img src="img/abaqr.JPG" alt="QR Code" class="qr-img" id="qr-image">
+            </div>
+        </div>
+
+        <form id="checkout-form" onsubmit="submitOrder(event)">
+            <div class="input-group">
+                <label>Full Name</label>
+                <input type="text" id="cus-name" required placeholder="Enter your name">
+            </div>
+            <div class="input-group">
+                <label>Phone Number</label>
+                <input type="tel" id="cus-phone" required placeholder="Enter your phone number">
+            </div>
+            <div class="input-group">
+                <label>Delivery Address</label>
+                <div style="display: flex; gap: 8px;">
+                    <textarea id="cus-address" required placeholder="Enter your full address"
+                        style="flex: 1;"></textarea>
+
+                    <button type="button" id="btn-location" onclick="getRealLocation()"
+                        style="padding: 10px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; height: fit-content;">
+                        📍 Location
+                    </button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>Note (Optional)</label>
+                <textarea id="cus-note" placeholder="Example: Please deliver in the afternoon..."></textarea>
+            </div>
+
+            <div class="input-group">
+                <label>Upload Payment Receipt</label>
+                <input type="file" id="receipt-upload" accept="image/*" required onchange="previewReceipt(event)">
+                <img id="receipt-preview"
+                    style="display:none; width:100%; max-height:200px; object-fit:contain; margin-top:10px; border-radius:5px; border: 1px solid #ddd;">
+            </div>
+
+            <button type="submit" class="btn submit-btn">Confirm Order</button>
+        </form>
+    </div>
+</div>

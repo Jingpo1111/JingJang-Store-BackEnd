@@ -1,0 +1,44 @@
+<header class="site-header">
+    <div class="logo">
+        <img src="img/IMG_3840.PNG" alt="Logo" width="70" height="70" class="logog">
+        <a href="#" onclick="showPage('home')">JingJang</a>
+    </div>
+
+    <span class="menu-toggle" onclick="toggleMenu()">☰</span>
+
+    <nav class="main-nav" id="nav-menu">
+        <ul>
+            <li><a href="#" onclick="showPage('home')">Home</a></li>
+            <li><a href="#" onclick="showPage('about')">About</a></li>
+            <li><a href="#" onclick="showPage('contact')">Contact</a></li>
+        </ul>
+    </nav>
+    <div class="cta-button">
+        <!-- Login Button (shown when NOT logged in) -->
+        <a href="login/login.html" id="header-login-btn" class="header-login-btn" style="display: none;">
+            Login
+        </a>
+
+        <!-- User Info (shown when logged in) -->
+        <div class="user-info" id="header-user-info" style="display: none;">
+            <span id="header-username" class="header-username"></span>
+            <span id="header-user-id" class="header-user-id"></span>
+        </div>
+
+        <!-- Profile Button (shown when logged in) -->
+        <div id="header-profile-btn" class="header-profile-btn" onclick="openProfile()" style="display: none;" title="View Profile">
+            👤
+        </div>
+
+        <!-- Cart Icon -->
+        <div class="cart-icon" onclick="toggleCart()">
+            🛒 <span id="cart-count">0</span>
+        </div>
+
+        <!-- Logout Button (shown when logged in) -->
+        <button id="header-logout-btn" onclick="logout()" class="logout-btn" style="display: none;" title="Logout">
+            <span class="logout-text">Logout</span>
+            <img src="img/logout.png" class="logout-icon" alt="Logout">
+        </button>
+    </div>
+</header>

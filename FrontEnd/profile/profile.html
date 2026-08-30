@@ -1,0 +1,129 @@
+<div id="profile-modal" class="profile-overlay">
+    <div class="profile-panel">
+        <button class="profile-close" onclick="closeProfile()">✖</button>
+
+        <!-- Profile Header -->
+        <div class="profile-header">
+            <div class="profile-avatar" id="profile-avatar">JJ</div>
+            <h2 id="profile-name">Username</h2>
+            <span class="profile-badge" id="profile-id">JJ-0001</span>
+            <p class="profile-joined" id="profile-joined">Member since: —</p>
+        </div>
+
+        <!-- Profile Tabs -->
+        <div class="profile-tabs">
+            <button class="profile-tab active" onclick="showProfileTab('orders')" ondblclick="handleOrdersTabDblClick()" id="ptab-orders">📦 My Orders</button>
+            <button class="profile-tab" onclick="showProfileTab('settings')" id="ptab-settings">⚙️ Settings</button>
+        </div>
+
+        <!-- Orders Tab -->
+        <div class="profile-tab-content active" id="profile-orders">
+            <div class="orders-summary">
+                <div class="summary-card active-filter" id="card-all" onclick="filterByStatus('all')">
+                    <span class="summary-num" id="total-orders">0</span>
+                    <span class="summary-label">Total Orders</span>
+                </div>
+                <div class="summary-card" id="card-pending" onclick="filterByStatus('pending')">
+                    <span class="summary-num" id="pending-orders">0</span>
+                    <span class="summary-label">Pending</span>
+                </div>
+                <div class="summary-card success-card" id="card-completed" onclick="filterByStatus('completed')">
+                    <span class="summary-num" id="success-orders">0</span>
+                    <span class="summary-label">Completed</span>
+                </div>
+            </div>
+
+            <!-- Order Search Bar -->
+            <div class="profile-search-container" style="margin-bottom: 15px;">
+                <input type="text" id="profile-order-search" autocomplete="off" placeholder="🔍 Search your Order ID..." onkeyup="filterProfileOrders()" style="width: 100%; padding: 10px 15px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.3s;" onfocus="this.style.borderColor='#3b665b'" onblur="this.style.borderColor='#e0e0e0'">
+            </div>
+
+            <div id="profile-order-list" class="profile-order-list">
+                <p style="text-align:center; color:#999; padding: 30px 0;">Loading orders...</p>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="profile-tab-content" id="profile-settings">
+            <!-- Account Info Card -->
+            <div class="settings-card">
+                <h3>👤 Account Information</h3>
+                <div class="info-row">
+                    <span class="info-label">Username</span>
+                    <span class="info-value" id="settings-username">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">User ID</span>
+                    <span class="info-value" id="settings-userid">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Registered</span>
+                    <span class="info-value" id="settings-regdate">—</span>
+                </div>
+            </div>
+
+            <!-- Change Password Card -->
+            <div class="settings-card">
+                <h3>🔒 Change Password</h3>
+                <form id="change-password-form" onsubmit="handleChangePassword(event)">
+                    <div class="settings-input-group">
+                        <label>Current Password</label>
+                        <input type="password" id="current-password" required placeholder="Enter current password">
+                    </div>
+                    <div class="settings-input-group">
+                        <label>New Password</label>
+                        <input type="password" id="new-password" required placeholder="Enter new password (min 4 chars)">
+                    </div>
+                    <div class="settings-input-group">
+                        <label>Confirm New Password</label>
+                        <input type="password" id="confirm-new-password" required placeholder="Confirm new password">
+                    </div>
+                    <div id="password-error" class="password-msg error"></div>
+                    <div id="password-success" class="password-msg success"></div>
+                    <button type="submit" class="change-pw-btn" id="change-pw-btn">
+                        <span class="btn-text">Update Password</span>
+                        <span class="btn-loader" style="display:none;">⏳ Updating...</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Timeline Modal -->
+<div id="timeline-modal" class="timeline-modal">
+    <div class="timeline-content">
+        <button class="timeline-close" onclick="closeTimeline()">✖</button>
+        <h3 class="timeline-title">Order Status</h3>
+        <div class="stepper" id="timeline-stepper">
+            <!-- Timeline steps will be injected here via JS -->
+        </div>
+    </div>
+</div>
+
+<!-- Change Password OTP Modal -->
+<div id="profile-otp-modal" class="timeline-modal" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="timeline-content" style="max-width: 400px; text-align: center; padding: 30px;">
+        <h3 class="timeline-title" style="margin-bottom: 10px;">Verify Your Email</h3>
+        <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
+            We sent a 6-digit code to <br><b id="profile-otp-email" style="color:#2c3e50;"></b>
+        </p>
+        
+        <input type="text" id="profile-otp-input" maxlength="6" placeholder="Enter 6-digit code" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 8px; text-align: center; font-size: 18px; letter-spacing: 5px;">
+        
+        <div id="profile-otp-error" style="color: #e74c3c; font-size: 13px; min-height: 20px; margin-bottom: 15px;"></div>
+        
+        <button onclick="handleProfileVerifyOTP()" id="profile-otp-verify-btn" style="width: 100%; padding: 12px; background: #3b665b; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.3s; margin-bottom: 10px;">
+            <span class="btn-text">Verify & Change Password</span>
+            <span class="btn-loader" style="display:none;">⏳ Verifying...</span>
+        </button>
+        
+        <button onclick="handleProfileResendOTP()" id="profile-otp-resend-btn" style="background: none; border: none; color: #3b665b; cursor: pointer; font-size: 14px; text-decoration: underline;">
+            Didn't receive it? Resend OTP
+        </button>
+
+        <button onclick="closeProfileOTPModal()" style="margin-top: 20px; background: none; border: none; color: #999; cursor: pointer; font-size: 14px;">
+            Cancel
+        </button>
+    </div>
+</div>

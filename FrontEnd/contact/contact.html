@@ -1,0 +1,25 @@
+<div class="contact-container">
+    <div class="contact-header">
+        <h1>Contact Us</h1>
+        <p>ទាក់ទងមកយើងខ្ញុំសម្រាប់ព័ត៌មានបន្ថែម ឬសួរសំណួរផ្សេងៗ</p>
+    </div>
+
+    <div class="contact-content">
+        <form class="contact-form" onsubmit="return sendMessage(event)">
+            <input type="text" name="name" placeholder="ឈ្មោះរបស់អ្នក (Name)" required>
+            <input type="email" name="email" placeholder="អ៊ីមែល (Email)" required>
+            <input type="tel" name="phone" placeholder="លេខទូរស័ព្ទ (Phone Number)" required pattern="[0-9+ ]{8,15}">
+            <input type="hidden" name="title" value="New Contact Form Message">
+            <textarea name="message" placeholder="សាររបស់អ្នក (Message)" rows="5" required></textarea>
+            <button type="submit">ផ្ញើសារ (Send Message)</button>
+        </form>
+
+        <div class="contact-info">
+            <h2>ព័ត៌មានលម្អិត</h2>
+            <p>📍 ទីតាំង: រាជធានីភ្នំពេញ, កម្ពុជា</p>
+            <p>📞 ទូរស័ព្ទ: 016 44 16 53</p>
+            <p>📧 អ៊ីមែល: <a href="mailto:phaijingpo016441653@gmail.com" target="_blank">support@jingjang.com</a></p>
+            <p>✈️ Telegram: <a href="https://t.me/Jingpophai" target="_blank">PHAI JINGPO</a></p>
+        </div>
+    </div>
+</div>

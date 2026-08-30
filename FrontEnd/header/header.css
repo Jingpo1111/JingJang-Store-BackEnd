@@ -1,0 +1,400 @@
+/* 1. Basic Reset (គួរនៅខាងលើគេជានិច្ច) */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* 2. Header Layout ទូទៅ */
+.site-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 50px;
+    background: rgba(59, 102, 91, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: #ffffff;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+/* 3. Logo Styling */
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    transition: transform 0.3s ease;
+}
+
+.logo:hover {
+    transform: scale(1.02);
+}
+
+.logog {
+    width: 55px;
+    height: 55px;
+    border-radius: 50%;
+    object-fit: cover;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+}
+
+.logo a {
+    color: #ffffff;
+    text-decoration: none;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #ffffff 0%, #a8e6cf 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+}
+
+.logo a:hover {
+    filter: brightness(1.2);
+}
+
+/* 4. Navigation Menu */
+.main-nav ul {
+    list-style: none;
+    display: flex;
+    gap: 35px;
+}
+
+.main-nav a {
+    position: relative;
+    color: #f0f0f0;
+    text-decoration: none;
+    font-size: 17px;
+    font-weight: 500;
+    padding: 8px 0;
+    transition: color 0.3s ease;
+}
+
+.main-nav a:hover {
+    color: #26de81;
+}
+
+.main-nav a::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background-color: #26de81;
+    transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.main-nav a:hover::after {
+    width: 100%;
+}
+
+/* 5. Call to Action Button & User Info */
+.cta-button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-login-btn {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 18px;
+    border-radius: 20px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    box-shadow: 0 3px 10px rgba(46, 204, 113, 0.3);
+}
+
+.header-login-btn:hover {
+    transform: translateY(-2px);
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #fff;
+    font-size: 13px;
+    padding: 3px 8px;
+}
+
+.header-username {
+    font-weight: 600;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-user-id {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.header-profile-btn {
+    font-size: 22px;
+    cursor: pointer;
+    color: #ffffff;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.header-profile-btn:hover {
+    transform: scale(1.15);
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* ប៊ូតុង ☰ (លាក់សិននៅលើកុំព្យូទ័រ) */
+.menu-toggle {
+    display: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: white;
+    transition: transform 0.3s ease;
+}
+
+.menu-toggle:hover {
+    transform: scale(1.1);
+}
+
+/* Logout Button Base */
+.logout-btn {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ff6b6b;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logout-btn:hover {
+    background: rgba(255, 75, 75, 0.2);
+}
+
+.logout-icon {
+    display: none;
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+/* ========================================= */
+/* 6. Mobile Responsive Design */
+/* ========================================= */
+@media (max-width: 768px) {
+    .site-header {
+        flex-wrap: wrap;
+        padding: 10px 15px;
+    }
+
+    .logo {
+        order: 1;
+        font-size: 20px;
+        gap: 8px;
+    }
+
+    .logog {
+        width: 40px;
+        height: 40px;
+    }
+
+    .cta-button {
+        order: 2;
+        margin-left: auto;
+        margin-right: 12px;
+        gap: 8px !important;
+    }
+
+    .menu-toggle {
+        display: block;
+        order: 3;
+        font-size: 24px;
+        padding: 4px;
+    }
+
+    .main-nav {
+        order: 4;
+        width: 100%;
+        text-align: center;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        transition: max-height 0.4s ease-in-out, opacity 0.3s ease;
+        background: rgba(44, 77, 68, 0.98);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-radius: 12px;
+        margin-top: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    .main-nav ul {
+        flex-direction: column;
+        gap: 0;
+        padding: 10px 0;
+    }
+
+    .main-nav ul li {
+        width: 100%;
+    }
+
+    .main-nav a {
+        display: block;
+        padding: 12px 20px;
+        font-size: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .main-nav ul li:last-child a {
+        border-bottom: none;
+    }
+
+    .main-nav.show {
+        max-height: 400px;
+        opacity: 1;
+    }
+
+    #header-user-info {
+        display: none !important;
+    }
+
+    .logout-text {
+        display: none;
+    }
+
+    .logout-icon {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+
+    .logout-btn,
+    .header-profile-btn,
+    .cart-icon {
+        padding: 0 !important;
+        border-radius: 50% !important;
+        background: rgba(255, 255, 255, 0.1) !important;
+        border: none !important;
+        width: 38px !important;
+        height: 38px !important;
+        font-size: 18px !important;
+    }
+
+    .logout-btn:hover,
+    .header-profile-btn:hover,
+    .cart-icon:hover {
+        background: rgba(255, 255, 255, 0.2) !important;
+    }
+
+    .header-login-btn {
+        padding: 6px 14px !important;
+        font-size: 12px !important;
+    }
+}
+
+/* --- ស្តាយ៍សម្រាប់ Cart Icon ថ្មី --- */
+.cart-icon {
+    font-size: 26px;
+    cursor: pointer;
+    position: relative;
+    color: #ffffff;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.cart-icon:hover {
+    transform: scale(1.15) rotate(5deg);
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+#cart-count {
+    background-color: #ff4757;
+    color: white;
+    border-radius: 20px;
+    padding: 2px 7px;
+    font-size: 12px;
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    font-weight: bold;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid #3b665b;
+}
+
+/* Extra small devices (phones, iOS & Android) */
+@media (max-width: 480px) {
+    .site-header {
+        padding: 10px 12px !important;
+    }
+
+    .logo {
+        font-size: 18px !important;
+    }
+
+    .logog {
+        width: 38px !important;
+        height: 38px !important;
+    }
+
+    .cta-button {
+        gap: 6px !important;
+        margin-right: 8px !important;
+    }
+
+    .menu-toggle {
+        font-size: 22px !important;
+    }
+
+    .logout-btn,
+    .header-profile-btn,
+    .cart-icon {
+        width: 38px !important;
+        height: 38px !important;
+        font-size: 16px !important;
+    }
+
+    .header-login-btn {
+        padding: 5px 12px !important;
+        font-size: 11px !important;
+    }
+}
