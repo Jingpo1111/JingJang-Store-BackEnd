@@ -11,14 +11,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ============================================================
 // Routes
 // ============================================================
-const userRouter    = require('./routes/user.js');
-const orderRouter   = require('./routes/order.js');
-const otpRouter     = require('./routes/otp.js');
+const userRouter = require('./routes/user.js');
+const orderRouter = require('./routes/order.js');
+const otpRouter = require('./routes/otp.js');
 const categaryRouter = require('./routes/Categary.js');
 
-app.use('/user',     userRouter);
-app.use('/order',    orderRouter);
-app.use('/otp',      otpRouter);
+app.use('/user', userRouter);
+app.use('/order', orderRouter);
+app.use('/otp', otpRouter);
 app.use('/categary', categaryRouter);
 
 // Health check
