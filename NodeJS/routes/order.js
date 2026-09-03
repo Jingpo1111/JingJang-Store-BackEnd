@@ -164,22 +164,30 @@ router.get('/', (req, res) => {
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
 
-        // Format to match Google Apps Script response shape
-        const formatted = results.map((o, idx) => ({
-            rowIndex: idx + 2,
-            orderId: o.order_id_str || ('ORD-' + ('0000' + o.orderid).slice(-4)),
-            userId: o.userid,
-            date: o.order_date,
-            name: o.name,
-            phone: o.Phone,
-            address: o.Address,
-            total: o.Total,
-            items: o.Items,
-            receipt: o.Receipt || 'No Receipt',
-            status: o.CurrentStatus || 'Pending',
-            note: o.Note || 'គ្មាន',
-            history: o.status_history || '[]'
-        }));
+        // Format to match Admin Dashboard response shape
+        const formatted = results.map((o, idx) => {
+            const d = o.order_date ? new Date(o.order_date) : null;
+            const formattedDate = (d && !isNaN(d.getTime())) ? d.toLocaleString('en-GB', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+            }) : (o.order_date || '-');
+
+            return {
+                rowIndex: idx + 2,
+                orderId: o.order_id_str || ('ORD-' + ('0000' + o.orderid).slice(-4)),
+                userId: o.userid,
+                date: formattedDate,
+                name: o.name,
+                phone: o.Phone,
+                address: o.Address,
+                total: o.Total,
+                items: o.Items,
+                receipt: o.Receipt || 'No Receipt',
+                status: o.CurrentStatus || 'Pending',
+                note: o.Note || 'គ្មាន',
+                history: o.status_history || '[]'
+            };
+        });
 
         res.json(formatted);
     });

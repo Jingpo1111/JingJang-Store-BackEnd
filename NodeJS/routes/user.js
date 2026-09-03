@@ -20,10 +20,21 @@ function generateUserId(lastCount) {
 // GET /user — Get all users (Admin Dashboard)
 // ============================================================
 router.get('/', (req, res) => {
-    const sql = 'SELECT userid_str AS userId, username, email, register_date AS registerDate FROM users';
+    const sql = 'SELECT userid_str AS userId, username, email, register_date AS registerDate FROM users ORDER BY userid DESC';
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
-        res.json({ status: 'success', users: results });
+        const formatted = results.map(u => {
+            const d = u.registerDate ? new Date(u.registerDate) : null;
+            const formattedDate = (d && !isNaN(d.getTime())) ? d.toLocaleString('en-GB', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+            }) : (u.registerDate || '-');
+            return {
+                ...u,
+                registerDate: formattedDate
+            };
+        });
+        res.json({ status: 'success', users: formatted });
     });
 });
 
@@ -179,15 +190,43 @@ router.post('/get-info', (req, res) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (results.length > 0) {
             const u = results[0];
+            const d = u.register_date ? new Date(u.register_date) : null;
+            const formattedDate = (d && !isNaN(d.getTime())) ? d.toLocaleString('en-GB', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+            }) : (u.register_date || '');
+
             res.json({
                 status: 'success',
                 userId: u.userid_str,
                 username: u.username,
                 email: u.email || '',
-                registerDate: u.register_date || ''
+                registerDate: formattedDate,
+                rawDate: u.register_date
             });
         } else {
-            res.json({ status: 'error', message: 'User not found.' });
+            // Also check customers table if not found by string ID in users
+            const custSql = 'SELECT id, google_id, name, email, created_at FROM customers WHERE id = ? OR google_id = ?';
+            db.query(custSql, [userId, userId], (custErr, custResults) => {
+                if (custErr || custResults.length === 0) {
+                    return res.json({ status: 'error', message: 'User not found.' });
+                }
+                const c = custResults[0];
+                const cd = c.created_at ? new Date(c.created_at) : null;
+                const formattedDate = (cd && !isNaN(cd.getTime())) ? cd.toLocaleString('en-GB', {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+                }) : (c.created_at || '');
+
+                res.json({
+                    status: 'success',
+                    userId: 'JJ-' + ('0000' + c.id).slice(-4),
+                    username: c.name,
+                    email: c.email || '',
+                    registerDate: formattedDate,
+                    rawDate: c.created_at
+                });
+            });
         }
     });
 });
@@ -230,23 +269,23 @@ router.post('/change-password', (req, res) => {
 // (mirrors action: "resetPassword" in AuthScript.gs)
 // ============================================================
 router.post('/reset-password', (req, res) => {
-    const { email, newPassword } = req.body;
+    const { email, newPassword, userId } = req.body;
 
-    if (!email || !newPassword) {
-        return res.status(400).json({ status: 'error', message: 'Email and new password are required.' });
+    if ((!email && !userId) || !newPassword) {
+        return res.status(400).json({ status: 'error', message: 'Email or User ID, and new password are required.' });
     }
     if (newPassword.length < 4) {
         return res.status(400).json({ status: 'error', message: 'New password must be at least 4 characters.' });
     }
 
     const encodedNew = base64Encode(newPassword);
-    const sql = 'UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?)';
-    db.query(sql, [encodedNew, email], (err, result) => {
+    const sql = 'UPDATE users SET password = ? WHERE (email IS NOT NULL AND LOWER(email) = LOWER(?)) OR userid_str = ?';
+    db.query(sql, [encodedNew, email || '', userId || ''], (err, result) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (result.affectedRows === 0) {
-            return res.json({ status: 'error', message: 'Email not found.' });
+            return res.json({ status: 'error', message: 'Account not found.' });
         }
-        res.json({ status: 'success', message: 'Password reset successfully! You can now login.' });
+        res.json({ status: 'success', message: 'Password updated successfully!' });
     });
 });
 

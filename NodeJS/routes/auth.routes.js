@@ -4,6 +4,38 @@ const passport = require('passport');
 const { isCustomerAuthenticated } = require('../middleware/auth.middleware');
 
 // ============================================================
+// Dual-Environment Helper: Automatically detect Local vs Deploy
+// ============================================================
+function getOAuthCallbackUrl(req) {
+    const host = req.get('host') || '';
+    // If running on local machine (localhost or 127.0.0.1)
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        return process.env.GOOGLE_CALLBACK_URL_LOCAL || `http://${host}/auth/google/callback`;
+    }
+    // If deployed on Render or other production host
+    if (process.env.GOOGLE_CALLBACK_URL) {
+        return process.env.GOOGLE_CALLBACK_URL;
+    }
+    const proto = req.get('x-forwarded-proto') || 'https';
+    return `${proto}://${host}/auth/google/callback`;
+}
+
+function getFrontendRedirectUrl(req) {
+    // 1. If referer or query has return URL
+    const saved = req.session && req.session.returnTo;
+    if (saved) return saved;
+
+    const host = req.get('host') || '';
+    // 2. If running locally, use FRONTEND_URL_LOCAL
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        return (process.env.FRONTEND_URL_LOCAL || 'http://127.0.0.1:5500/FrontEnd').trim().replace(/\/$/, '');
+    }
+
+    // 3. Deployed production fallback (Vercel or FRONTEND_URL)
+    return (process.env.FRONTEND_URL || 'https://jingjang-store.vercel.app').trim().replace(/\/$/, '');
+}
+
+// ============================================================
 // GET /auth/google — Initiate Google OAuth 2.0 authentication
 // ============================================================
 router.get('/google', (req, res, next) => {
@@ -18,8 +50,8 @@ router.get('/google', (req, res, next) => {
         `);
     }
 
-    // Save originating frontend address so redirect works accurately (Live Server 5500, port 3000, etc.)
-    const referer = req.query.redirect || req.headers.referer;
+    // Save originating frontend address so redirect works accurately (Live Server 5500, port 3000, or Vercel)
+    const referer = req.query.redirect || req.get('referer');
     if (referer && req.session) {
         try {
             const refererUrl = new URL(referer);
@@ -31,7 +63,10 @@ router.get('/google', (req, res, next) => {
         } catch (e) {}
     }
 
+    const callbackURL = getOAuthCallbackUrl(req);
+
     passport.authenticate('google', {
+        callbackURL: callbackURL,
         scope: ['profile', 'email'],
         prompt: 'select_account' // Allow user to choose which Google account to use
     })(req, res, next);
@@ -41,11 +76,10 @@ router.get('/google', (req, res, next) => {
 // GET /auth/google/callback — Google OAuth callback handler
 // ============================================================
 router.get('/google/callback', (req, res, next) => {
-    const frontendUrl = (req.session && req.session.returnTo)
-        ? req.session.returnTo
-        : (process.env.FRONTEND_URL || 'http://127.0.0.1:5500/FrontEnd');
+    const callbackURL = getOAuthCallbackUrl(req);
+    const frontendUrl = getFrontendRedirectUrl(req);
 
-    passport.authenticate('google', (err, user, info) => {
+    passport.authenticate('google', { callbackURL: callbackURL }, (err, user, info) => {
         if (err) {
             console.error('❌ Google Auth Error:', err);
             return res.redirect(`${frontendUrl}/login/login.html?error=auth_failed&msg=${encodeURIComponent(err.message)}`);
@@ -63,6 +97,13 @@ router.get('/google/callback', (req, res, next) => {
             }
 
             // Successfully authenticated!
+            // Format registration date from customers.created_at
+            const rawDate = user.created_at || new Date();
+            const formattedRegDate = new Date(rawDate).toLocaleString('en-GB', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+            });
+
             // Redirect to frontend store with user details in query params so localStorage syncs
             const userIdStr = user.userid_str || ('JJ-' + ('0000' + user.id).slice(-4));
             const params = new URLSearchParams({
@@ -72,7 +113,8 @@ router.get('/google/callback', (req, res, next) => {
                 name: user.name || '',
                 email: user.email || '',
                 avatar: user.avatar || '',
-                role: user.role || 'customer'
+                role: user.role || 'customer',
+                regDate: formattedRegDate
             });
 
             return res.redirect(`${frontendUrl}/index.html?${params.toString()}`);
@@ -85,6 +127,12 @@ router.get('/google/callback', (req, res, next) => {
 // ============================================================
 router.get('/current-user', (req, res) => {
     if (req.isAuthenticated && req.isAuthenticated()) {
+        const rawDate = req.user.created_at || new Date();
+        const formattedRegDate = new Date(rawDate).toLocaleString('en-GB', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
+        });
+
         return res.json({
             status: 'success',
             isAuthenticated: true,
@@ -95,7 +143,9 @@ router.get('/current-user', (req, res) => {
                 email: req.user.email,
                 avatar: req.user.avatar,
                 role: req.user.role,
-                userId: req.user.userid_str || ('JJ-' + ('0000' + req.user.id).slice(-4))
+                userId: req.user.userid_str || ('JJ-' + ('0000' + req.user.id).slice(-4)),
+                regDate: formattedRegDate,
+                createdAt: rawDate
             }
         });
     }
@@ -111,7 +161,7 @@ router.get('/current-user', (req, res) => {
 // GET /auth/logout — Destroy session and redirect to store home
 // ============================================================
 router.get('/logout', (req, res, next) => {
-    const frontendUrl = process.env.FRONTEND_URL || 'http://127.0.0.1:5500/FrontEnd';
+    const frontendUrl = getFrontendRedirectUrl(req);
 
     req.logout((err) => {
         if (err) {
