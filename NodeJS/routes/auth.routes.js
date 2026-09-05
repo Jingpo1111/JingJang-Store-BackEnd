@@ -21,17 +21,17 @@ function getOAuthCallbackUrl(req) {
 }
 
 function getFrontendRedirectUrl(req) {
-    // 1. If referer or query has return URL
+
     const saved = req.session && req.session.returnTo;
     if (saved) return saved;
 
     const host = req.get('host') || '';
-    // 2. If running locally, use FRONTEND_URL_LOCAL
+
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
         return (process.env.FRONTEND_URL_LOCAL || 'http://127.0.0.1:5500/FrontEnd').trim().replace(/\/$/, '');
     }
 
-    // 3. Deployed production fallback (Vercel or FRONTEND_URL)
+
     return (process.env.FRONTEND_URL || 'https://jingjang-store.vercel.app').trim().replace(/\/$/, '');
 }
 
@@ -60,7 +60,7 @@ router.get('/google', (req, res, next) => {
                 basePath += '/FrontEnd';
             }
             req.session.returnTo = basePath;
-        } catch (e) {}
+        } catch (e) { }
     }
 
     const callbackURL = getOAuthCallbackUrl(req);
