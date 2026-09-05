@@ -61,7 +61,6 @@ const authRouter = require('./routes/auth.routes.js');
 const userRouter = require('./routes/user.js');
 const orderRouter = require('./routes/order.js');
 const otpRouter = require('./routes/otp.js');
-const categaryRouter = require('./routes/Categary.js');
 const categoryRouter = require('./routes/category.routes.js');
 const productRouter = require('./routes/product.routes.js');
 
@@ -69,7 +68,6 @@ app.use('/auth', authRouter);
 app.use('/user', userRouter);
 app.use('/order', orderRouter);
 app.use('/otp', otpRouter);
-app.use('/categary', categaryRouter);
 app.use('/categories', categoryRouter);
 app.use('/products', productRouter);
 
