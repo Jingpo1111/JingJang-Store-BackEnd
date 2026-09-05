@@ -92,6 +92,7 @@ router.get('/', async (req, res) => {
             };
         });
 
+        res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
         res.json({
             status: 'success',
             count: formatted.length,
