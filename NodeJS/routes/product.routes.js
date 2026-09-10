@@ -37,6 +37,8 @@ router.get('/', async (req, res) => {
                 p.price,
                 p.color_name,
                 p.colors,
+                p.option_name,
+                p.option_values,
                 p.created_at
             FROM products p
             LEFT JOIN categories c ON p.category_id = c.id
@@ -70,6 +72,31 @@ router.get('/', async (req, res) => {
                 try { colors = JSON.parse(colors); } catch (e) { colors = []; }
             }
 
+            let optionValues = p.option_values;
+            if (typeof optionValues === 'string') {
+                try {
+                    optionValues = JSON.parse(optionValues);
+                } catch (e) {
+                    optionValues = optionValues.split(',').map(s => s.trim()).filter(Boolean);
+                }
+            }
+
+            // Normalize options into array of { name, values } objects
+            let normalizedOptions = [];
+            if (Array.isArray(optionValues) && optionValues.length > 0) {
+                if (typeof optionValues[0] === 'object' && optionValues[0] !== null && optionValues[0].name) {
+                    normalizedOptions = optionValues.map(opt => ({
+                        name: opt.name || 'Option',
+                        values: Array.isArray(opt.values) ? opt.values : (typeof opt.values === 'string' ? opt.values.split(',').map(s => s.trim()).filter(Boolean) : [])
+                    }));
+                } else {
+                    normalizedOptions = [{
+                        name: p.option_name || 'Option',
+                        values: optionValues
+                    }];
+                }
+            }
+
             const type = p.type || p.category_name || 'General';
             const cartName = p.cart_name || p.name;
             const colorName = p.color_name || `color_prod_${p.id}`;
@@ -87,6 +114,9 @@ router.get('/', async (req, res) => {
                 color_name: colorName,
                 specs: Array.isArray(specs) ? specs : [],
                 colors: Array.isArray(colors) ? colors : [],
+                option_name: p.option_name || (normalizedOptions.length > 0 ? normalizedOptions.map(o => o.name).join(', ') : null),
+                options: normalizedOptions,
+                option_values: normalizedOptions,
                 images: imageMap[p.id] || [],
                 created_at: p.created_at
             };
@@ -136,6 +166,31 @@ router.get('/:id', async (req, res) => {
             try { colors = JSON.parse(colors); } catch (e) { colors = []; }
         }
 
+        let optionValues = p.option_values;
+        if (typeof optionValues === 'string') {
+            try {
+                optionValues = JSON.parse(optionValues);
+            } catch (e) {
+                optionValues = optionValues.split(',').map(s => s.trim()).filter(Boolean);
+            }
+        }
+
+        // Normalize options into array of { name, values } objects
+        let normalizedOptions = [];
+        if (Array.isArray(optionValues) && optionValues.length > 0) {
+            if (typeof optionValues[0] === 'object' && optionValues[0] !== null && optionValues[0].name) {
+                normalizedOptions = optionValues.map(opt => ({
+                    name: opt.name || 'Option',
+                    values: Array.isArray(opt.values) ? opt.values : (typeof opt.values === 'string' ? opt.values.split(',').map(s => s.trim()).filter(Boolean) : [])
+                }));
+            } else {
+                normalizedOptions = [{
+                    name: p.option_name || 'Option',
+                    values: optionValues
+                }];
+            }
+        }
+
         res.json({
             status: 'success',
             data: {
@@ -151,6 +206,9 @@ router.get('/:id', async (req, res) => {
                 color_name: p.color_name || `color_prod_${p.id}`,
                 specs: Array.isArray(specs) ? specs : [],
                 colors: Array.isArray(colors) ? colors : [],
+                option_name: p.option_name || (normalizedOptions.length > 0 ? normalizedOptions.map(o => o.name).join(', ') : null),
+                options: normalizedOptions,
+                option_values: normalizedOptions,
                 images: images.map(img => img.image_url),
                 created_at: p.created_at
             }
@@ -174,7 +232,9 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
             price,
             color_name,
             specs,
-            colors
+            colors,
+            option_name,
+            option_values
         } = req.body;
 
         // Validation
@@ -233,6 +293,42 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
             parsedColors = colors;
         }
 
+        // Parse Options (supports multi-option groups e.g. Size: S,M,L and Type: Wireless,Wired)
+        let normalizedOptions = [];
+        if (typeof option_values === 'string') {
+            try {
+                const parsed = JSON.parse(option_values);
+                if (Array.isArray(parsed)) {
+                    normalizedOptions = parsed;
+                }
+            } catch (e) {
+                const vals = option_values.split(',').map(s => s.trim()).filter(Boolean);
+                if (vals.length > 0) {
+                    normalizedOptions = [{ name: (option_name || 'Option').trim(), values: vals }];
+                }
+            }
+        } else if (Array.isArray(option_values)) {
+            normalizedOptions = option_values;
+        }
+
+        // Standardize normalizedOptions
+        normalizedOptions = normalizedOptions.map(opt => {
+            if (typeof opt === 'object' && opt !== null && opt.name) {
+                const vals = Array.isArray(opt.values)
+                    ? opt.values
+                    : (typeof opt.values === 'string' ? opt.values.split(',').map(s => s.trim()).filter(Boolean) : []);
+                if (vals.length > 0) {
+                    return { name: opt.name.trim(), values: vals };
+                }
+            }
+            return null;
+        }).filter(Boolean);
+
+        const resolvedOptionName = normalizedOptions.length > 0
+            ? normalizedOptions.map(o => o.name).join(', ')
+            : ((option_name || '').trim() || null);
+        const finalOptionValues = normalizedOptions.length > 0 ? JSON.stringify(normalizedOptions) : null;
+
         // 1. Upload images to Cloudinary
         const uploadedImageUrls = [];
         if (req.files && req.files.length > 0) {
@@ -245,8 +341,8 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
         // 2. Insert into products table
         const [result] = await pool.query(
             `INSERT INTO products 
-            (category_id, name, type, cart_name, specs, price, color_name, colors) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (category_id, name, type, cart_name, specs, price, color_name, colors, option_name, option_values) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 parsedCategoryId,
                 trimmedName,
@@ -255,7 +351,9 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
                 JSON.stringify(parsedSpecs),
                 parsedPrice,
                 resolvedColorName,
-                JSON.stringify(parsedColors)
+                JSON.stringify(parsedColors),
+                resolvedOptionName,
+                finalOptionValues
             ]
         );
 
@@ -283,6 +381,9 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
                 color_name: resolvedColorName,
                 specs: parsedSpecs,
                 colors: parsedColors,
+                option_name: resolvedOptionName,
+                options: normalizedOptions,
+                option_values: normalizedOptions,
                 images: uploadedImageUrls
             }
         });

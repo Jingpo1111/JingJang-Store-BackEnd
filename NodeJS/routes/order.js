@@ -117,9 +117,12 @@ function sendTelegramNotification(orderData, orderId) {
     let itemsText = '';
     try {
         const items = JSON.parse(orderData.Items || '[]');
-        items.forEach(item => { itemsText += `\n- ${item.name} <b>(x${item.quantity})</b>`; });
+        items.forEach(item => {
+            const priceStr = item.price ? ` — $${parseFloat(item.price).toFixed(2)}` : '';
+            itemsText += `\n• <b>${item.name}</b> <b>(x${item.quantity})</b>${priceStr}`;
+        });
     } catch (e) {
-        itemsText = '\n- ' + (orderData.Items || '');
+        itemsText = '\n• ' + (orderData.Items || '');
     }
 
     const address = (orderData.Address || '');

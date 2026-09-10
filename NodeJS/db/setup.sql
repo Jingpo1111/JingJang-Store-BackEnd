@@ -38,7 +38,33 @@ CREATE TABLE IF NOT EXISTS otp_codes (
 );
 
 -- 4. Categories table
-CREATE TABLE IF NOT EXISTS categarys (
-    categaryid      INT AUTO_INCREMENT PRIMARY KEY,
-    categaryname    VARCHAR(150) NOT NULL
+CREATE TABLE IF NOT EXISTS categories (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    name            VARCHAR(150) NOT NULL
+);
+
+-- 5. Products table (supports custom options: Size, Type, etc.)
+CREATE TABLE IF NOT EXISTS products (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    category_id     INT,
+    name            VARCHAR(255) NOT NULL,
+    type            VARCHAR(100),
+    cart_name       VARCHAR(255),
+    specs           TEXT,
+    price           DECIMAL(10,2) NOT NULL,
+    color_name      VARCHAR(100),
+    colors          TEXT,
+    option_name     VARCHAR(100) DEFAULT NULL,   -- e.g. 'Size', 'Type', 'Model'
+    option_values   TEXT DEFAULT NULL,           -- JSON array e.g. ["S","M","L","XL"]
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+);
+
+-- 6. Product images table
+CREATE TABLE IF NOT EXISTS product_images (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    product_id      INT NOT NULL,
+    image_url       TEXT NOT NULL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
