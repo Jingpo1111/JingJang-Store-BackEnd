@@ -1,0 +1,4 @@
+# dependencies
+node_modules/
+# environment variables (never commit this!)
+.env
