@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { verifyResetTokenHMAC } = require('../utils/token.util');
 
 // ============================================================
 // Helper: base64 encode password (same as Utilities.base64Encode in Apps Script)
@@ -265,11 +266,17 @@ router.post('/change-password', (req, res) => {
 });
 
 // ============================================================
-// POST /user/reset-password — Reset password by email (after OTP verified)
-// (mirrors action: "resetPassword" in AuthScript.gs)
+// POST /user/reset-password — Reset password (requires verified resetToken)
 // ============================================================
 router.post('/reset-password', (req, res) => {
-    const { email, newPassword, userId } = req.body;
+    const { email, newPassword, userId, resetToken } = req.body;
+
+    if (!resetToken) {
+        return res.status(401).json({
+            status: 'error',
+            message: 'Verification required. Please verify your OTP code first.'
+        });
+    }
 
     if ((!email && !userId) || !newPassword) {
         return res.status(400).json({ status: 'error', message: 'Email or User ID, and new password are required.' });
@@ -278,14 +285,89 @@ router.post('/reset-password', (req, res) => {
         return res.status(400).json({ status: 'error', message: 'New password must be at least 4 characters.' });
     }
 
-    const encodedNew = base64Encode(newPassword);
-    const sql = 'UPDATE users SET password = ? WHERE (email IS NOT NULL AND LOWER(email) = LOWER(?)) OR userid_str = ?';
-    db.query(sql, [encodedNew, email || '', userId || ''], (err, result) => {
-        if (err) return res.status(500).json({ status: 'error', message: err.message });
-        if (result.affectedRows === 0) {
-            return res.json({ status: 'error', message: 'Account not found.' });
+    // Step 1: Verify token cryptographic signature and timestamp
+    const tokenResult = verifyResetTokenHMAC(resetToken);
+    if (!tokenResult.valid) {
+        return res.status(401).json({ status: 'error', message: tokenResult.message });
+    }
+
+    const tokenEmail = tokenResult.email;
+
+    // Step 2: Ensure the target user account matches the verified token's email
+    if (email && email.trim().toLowerCase() !== tokenEmail) {
+        return res.status(403).json({
+            status: 'error',
+            message: 'Security error: The reset token does not match the provided email address.'
+        });
+    }
+
+    // Step 3: Query otp_codes table to verify this reset_token is active, matching, and not expired
+    const checkTokenSql = `
+        SELECT email, TIMESTAMPDIFF(SECOND, NOW(), token_expires_at) AS remaining_seconds 
+        FROM otp_codes 
+        WHERE email = ? AND reset_token = ?
+    `;
+
+    db.query(checkTokenSql, [tokenEmail, resetToken], (tokErr, tokResults) => {
+        if (tokErr) {
+            console.error('[ResetPassword] DB token check error:', tokErr.message);
+            return res.status(500).json({ status: 'error', message: 'Internal server error verifying token.' });
         }
-        res.json({ status: 'success', message: 'Password updated successfully!' });
+
+        if (tokResults.length === 0) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Invalid or already used reset token. Please request a new OTP code.'
+            });
+        }
+
+        if (tokResults[0].remaining_seconds !== null && tokResults[0].remaining_seconds <= 0) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'Reset token has expired. Please request a new OTP code.'
+            });
+        }
+
+        // Check user exists in users table and matches token email
+        const targetSql = 'SELECT userid, email, userid_str FROM users WHERE LOWER(email) = ? OR userid_str = ?';
+        db.query(targetSql, [tokenEmail, userId || ''], (userErr, userResults) => {
+            if (userErr) {
+                return res.status(500).json({ status: 'error', message: userErr.message });
+            }
+
+            if (userResults.length === 0) {
+                return res.status(404).json({ status: 'error', message: 'Account not found.' });
+            }
+
+            const targetUser = userResults[0];
+
+            // If userId was provided, ensure its account email matches the tokenEmail
+            if (userId && targetUser.email.toLowerCase() !== tokenEmail) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Security error: The reset token does not match the owner of this User ID.'
+                });
+            }
+
+            const encodedNew = base64Encode(newPassword);
+
+            // Step 4: Update the password in users table
+            const updatePwSql = 'UPDATE users SET password = ? WHERE userid = ?';
+            db.query(updatePwSql, [encodedNew, targetUser.userid], (updateErr) => {
+                if (updateErr) {
+                    return res.status(500).json({ status: 'error', message: updateErr.message });
+                }
+
+                // Step 5: Invalidate the token immediately so it CANNOT be replayed
+                const invalidateSql = 'UPDATE otp_codes SET reset_token = NULL, token_expires_at = NULL WHERE email = ?';
+                db.query(invalidateSql, [tokenEmail], () => { });
+
+                res.json({
+                    status: 'success',
+                    message: 'Password updated successfully!'
+                });
+            });
+        });
     });
 });
 

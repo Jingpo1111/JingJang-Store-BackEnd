@@ -6,6 +6,22 @@ if (dns.setDefaultResultOrder) {
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const { generateResetToken, RESET_TOKEN_EXPIRY_SECONDS } = require('../utils/token.util');
+
+// Auto-ensure otp_codes table has reset_token and token_expires_at columns
+function ensureOtpColumns() {
+    db.query("SHOW COLUMNS FROM otp_codes LIKE 'reset_token'", (err, rows) => {
+        if (!err && rows && rows.length === 0) {
+            db.query("ALTER TABLE otp_codes ADD COLUMN reset_token VARCHAR(500) DEFAULT NULL", () => { });
+        }
+    });
+    db.query("SHOW COLUMNS FROM otp_codes LIKE 'token_expires_at'", (err, rows) => {
+        if (!err && rows && rows.length === 0) {
+            db.query("ALTER TABLE otp_codes ADD COLUMN token_expires_at DATETIME DEFAULT NULL", () => { });
+        }
+    });
+}
+ensureOtpColumns();
 
 // Cooldown: 60 seconds between resend requests
 // Expiration: 5 minutes (300 seconds) validity for the code so users have time to enter it
@@ -167,10 +183,29 @@ router.post('/verify', (req, res) => {
             return res.json({ status: 'FAILED', message: 'Invalid OTP code. Please try again.' });
         }
 
-        // OTP verified successfully — clear it so it cannot be re-used
-        db.query('UPDATE otp_codes SET otp_code = NULL WHERE email = ?', [email], () => { });
+        // Generate cryptographically signed, single-use password reset token
+        const { token } = generateResetToken(email);
 
-        res.json({ status: 'SUCCESS', message: 'Email verified successfully!' });
+        // OTP verified successfully — clear raw otp_code and save reset_token with 10-minute expiry
+        const updateSql = `
+            UPDATE otp_codes 
+            SET otp_code = NULL, 
+                reset_token = ?, 
+                token_expires_at = DATE_ADD(NOW(), INTERVAL ? SECOND) 
+            WHERE email = ?
+        `;
+        db.query(updateSql, [token, RESET_TOKEN_EXPIRY_SECONDS, email], (upErr) => {
+            if (upErr) {
+                console.error('[OTP] Failed to save reset token:', upErr.message);
+            }
+
+            res.json({
+                status: 'SUCCESS',
+                message: 'Email verified successfully!',
+                resetToken: token,
+                expiresInSeconds: RESET_TOKEN_EXPIRY_SECONDS
+            });
+        });
     });
 });
 

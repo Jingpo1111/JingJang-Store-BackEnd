@@ -23,18 +23,20 @@ CREATE TABLE IF NOT EXISTS orders (
     Address         TEXT,
     Total           DECIMAL(10,2),
     Items           TEXT,                           -- JSON string of cart items
-    Receipt         LONGTEXT,                       -- base64 image or 'No Receipt'
+    Receipt         VARCHAR(500) DEFAULT 'No Receipt', -- Cloudinary HTTPS image URL or 'No Receipt'
     CurrentStatus   VARCHAR(50) DEFAULT 'Pending',
     Note            TEXT,
     status_history  TEXT,                           -- JSON array of {status, date}
     order_date      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. OTP codes table (for email verification)
+-- 3. OTP codes table (for email verification & password reset tokens)
 CREATE TABLE IF NOT EXISTS otp_codes (
-    email       VARCHAR(150) PRIMARY KEY,
-    otp_code    VARCHAR(10),
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    email            VARCHAR(150) PRIMARY KEY,
+    otp_code         VARCHAR(10),
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    reset_token      VARCHAR(500) DEFAULT NULL,
+    token_expires_at DATETIME DEFAULT NULL
 );
 
 -- 4. Categories table

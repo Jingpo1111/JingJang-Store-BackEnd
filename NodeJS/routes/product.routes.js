@@ -394,6 +394,199 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
 });
 
 // ============================================================
+// PUT /products/:id - Update product details and optionally add images
+// ============================================================
+router.put('/:id', upload.array('photos', 10), async (req, res) => {
+    try {
+        const productId = parseInt(req.params.id, 10);
+        if (isNaN(productId)) {
+            return res.status(400).json({ status: 'error', message: 'Invalid product ID' });
+        }
+
+        // 1. Verify product exists
+        const [existing] = await pool.query('SELECT * FROM products WHERE id = ?', [productId]);
+        if (existing.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Product not found' });
+        }
+
+        const current = existing[0];
+        const {
+            name,
+            category_id,
+            type,
+            cart_name,
+            price,
+            color_name,
+            specs,
+            colors,
+            option_name,
+            option_values,
+            remove_image_urls
+        } = req.body;
+
+        // Resolve fields with fallbacks to current values
+        const updatedName = name !== undefined && name.trim() ? name.trim() : current.name;
+        const updatedPrice = price !== undefined && !isNaN(parseFloat(price)) ? parseFloat(price) : current.price;
+        const updatedCartName = cart_name !== undefined ? cart_name.trim() : current.cart_name;
+        const updatedColorName = color_name !== undefined ? color_name.trim() : current.color_name;
+
+        let updatedCategoryId = current.category_id;
+        let updatedType = current.type;
+
+        if (category_id !== undefined) {
+            const parsedCatId = parseInt(category_id, 10);
+            if (!isNaN(parsedCatId)) {
+                const [catRows] = await pool.query('SELECT name FROM categories WHERE id = ?', [parsedCatId]);
+                if (catRows.length > 0) {
+                    updatedCategoryId = parsedCatId;
+                    updatedType = catRows[0].name;
+                }
+            } else if (category_id === null || category_id === '') {
+                updatedCategoryId = null;
+            }
+        }
+
+        if (type !== undefined && type.trim()) {
+            updatedType = type.trim();
+        }
+
+        // Specs
+        let finalSpecs = current.specs;
+        if (specs !== undefined) {
+            if (typeof specs === 'string') {
+                try {
+                    finalSpecs = JSON.stringify(JSON.parse(specs));
+                } catch (e) {
+                    finalSpecs = JSON.stringify(specs.split('\n').map(s => s.trim()).filter(Boolean));
+                }
+            } else if (Array.isArray(specs)) {
+                finalSpecs = JSON.stringify(specs);
+            }
+        }
+
+        // Colors
+        let finalColors = current.colors;
+        if (colors !== undefined) {
+            if (typeof colors === 'string') {
+                try {
+                    finalColors = JSON.stringify(JSON.parse(colors));
+                } catch (e) {
+                    finalColors = JSON.stringify([]);
+                }
+            } else if (Array.isArray(colors)) {
+                finalColors = JSON.stringify(colors);
+            }
+        }
+
+        // Options
+        let finalOptionName = current.option_name;
+        let finalOptionValues = current.option_values;
+        if (option_values !== undefined) {
+            let parsedOpts = [];
+            if (typeof option_values === 'string') {
+                try {
+                    parsedOpts = JSON.parse(option_values);
+                } catch (e) {
+                    const vals = option_values.split(',').map(s => s.trim()).filter(Boolean);
+                    if (vals.length > 0) {
+                        parsedOpts = [{ name: (option_name || 'Option').trim(), values: vals }];
+                    }
+                }
+            } else if (Array.isArray(option_values)) {
+                parsedOpts = option_values;
+            }
+
+            if (Array.isArray(parsedOpts) && parsedOpts.length > 0) {
+                finalOptionName = parsedOpts.map(o => o.name).join(', ');
+                finalOptionValues = JSON.stringify(parsedOpts);
+            } else {
+                finalOptionName = null;
+                finalOptionValues = null;
+            }
+        } else if (option_name !== undefined) {
+            finalOptionName = option_name.trim() || null;
+        }
+
+        // Update product record
+        await pool.query(`
+            UPDATE products 
+            SET category_id = ?,
+                name = ?,
+                type = ?,
+                cart_name = ?,
+                specs = ?,
+                price = ?,
+                color_name = ?,
+                colors = ?,
+                option_name = ?,
+                option_values = ?
+            WHERE id = ?
+        `, [
+            updatedCategoryId,
+            updatedName,
+            updatedType,
+            updatedCartName,
+            finalSpecs,
+            updatedPrice,
+            updatedColorName,
+            finalColors,
+            finalOptionName,
+            finalOptionValues,
+            productId
+        ]);
+
+        // Handle image removals if specified
+        if (remove_image_urls) {
+            let urlsToRemove = [];
+            try {
+                urlsToRemove = typeof remove_image_urls === 'string' ? JSON.parse(remove_image_urls) : remove_image_urls;
+            } catch (e) {
+                urlsToRemove = [remove_image_urls];
+            }
+            if (Array.isArray(urlsToRemove) && urlsToRemove.length > 0) {
+                await pool.query('DELETE FROM product_images WHERE product_id = ? AND image_url IN (?)', [productId, urlsToRemove]);
+            }
+        }
+
+        // Upload any newly provided photos to Cloudinary
+        const newImageUrls = [];
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                const secureUrl = await uploadToCloudinary(file.buffer, 'jingjang_store/products');
+                newImageUrls.push(secureUrl);
+            }
+            const imageValues = newImageUrls.map(url => [productId, url]);
+            await pool.query('INSERT INTO product_images (product_id, image_url) VALUES ?', [imageValues]);
+        }
+
+        // Fetch all current images for updated product
+        const [images] = await pool.query('SELECT image_url FROM product_images WHERE product_id = ? ORDER BY id ASC', [productId]);
+
+        res.json({
+            status: 'success',
+            message: 'Product updated successfully',
+            data: {
+                id: productId,
+                name: updatedName,
+                category_id: updatedCategoryId,
+                type: updatedType,
+                cart_name: updatedCartName,
+                price: parseFloat(updatedPrice),
+                color_name: updatedColorName,
+                specs: finalSpecs ? JSON.parse(finalSpecs) : [],
+                colors: finalColors ? JSON.parse(finalColors) : [],
+                option_name: finalOptionName,
+                option_values: finalOptionValues ? JSON.parse(finalOptionValues) : null,
+                images: images.map(img => img.image_url)
+            }
+        });
+    } catch (err) {
+        console.error('Error updating product:', err);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+// ============================================================
 // DELETE /products/:id - Delete product and its images
 // ============================================================
 router.delete('/:id', async (req, res) => {

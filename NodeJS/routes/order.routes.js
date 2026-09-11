@@ -1,7 +1,49 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
+const pool = require('../db/dbPromise');
+const { uploadToCloudinary } = require('../config/cloudinary');
 const https = require('https');
+
+// ============================================================
+// Helper: Send receipt image to Telegram via URL (lightweight JSON API)
+// ============================================================
+function sendTelegramPhotoUrl(BOT_TOKEN, CHAT_ID, photoUrl, caption) {
+    return new Promise((resolve) => {
+        try {
+            const payload = JSON.stringify({
+                chat_id: CHAT_ID,
+                photo: photoUrl,
+                caption: caption,
+                parse_mode: 'HTML'
+            });
+            const options = {
+                hostname: 'api.telegram.org',
+                path: `/bot${BOT_TOKEN}/sendPhoto`,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(payload)
+                }
+            };
+            const req = https.request(options, (res) => {
+                let body = '';
+                res.on('data', c => body += c);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(body);
+                        if (parsed.ok) console.log(`✅ Telegram: receipt photo URL sent (id=${parsed.result.message_id})`);
+                        else console.error('❌ Telegram sendPhoto URL error:', parsed.description);
+                    } catch (e) { }
+                    resolve();
+                });
+            });
+            req.on('error', (err) => { console.error('❌ Telegram photo URL request failed:', err.message); resolve(); });
+            req.write(payload);
+            req.end();
+        } catch (e) { console.error('❌ Telegram photo URL error:', e.message); resolve(); }
+    });
+}
 
 // ============================================================
 // Helper: Send Telegram text messa
@@ -141,13 +183,18 @@ function sendTelegramNotification(orderData, orderId) {
         `\n💰 ទឹកប្រាក់សរុប: <b>$${orderData.Total}</b>\n` +
         `📝 ចំណាំពីភ្ញៀវ: <b>${orderData.Note || 'គ្មាន'}</b>\n`;
 
-    const hasReceipt = orderData.Receipt && orderData.Receipt !== 'No Receipt' && orderData.Receipt.length > 100;
+    const hasReceipt = orderData.Receipt && orderData.Receipt !== 'No Receipt' && orderData.Receipt.length > 5;
 
     // Send text first, then photo if receipt exists — all non-blocking
     (async () => {
         if (hasReceipt) {
-            // Send receipt photo with message as caption (all in one Telegram message)
-            await sendTelegramPhoto(BOT_TOKEN, CHAT_ID, orderData.Receipt, message);
+            if (orderData.Receipt.startsWith('http://') || orderData.Receipt.startsWith('https://')) {
+                // Hosted Cloudinary URL — fast, lightweight Telegram JSON API
+                await sendTelegramPhotoUrl(BOT_TOKEN, CHAT_ID, orderData.Receipt, message);
+            } else {
+                // Fallback for raw base64 data
+                await sendTelegramPhoto(BOT_TOKEN, CHAT_ID, orderData.Receipt, message);
+            }
         } else {
             // No receipt — send text only
             await sendTelegramMessage(BOT_TOKEN, CHAT_ID, message + '\n🧾 វិក្កយបត្រ: <i>គ្មានរូបភាព</i>');
@@ -232,25 +279,145 @@ router.get('/user/:userId', (req, res) => {
 // (mirrors the main POST in OrderScript.gs — no Google Drive upload,
 //  receipt is stored as base64 string or URL in MySQL)
 // ============================================================
-router.post('/', (req, res) => {
-    const { userid, name, Phone, Address, Total, Items, Receipt, Note } = req.body;
+// ============================================================
+// POST /order — Create a new order with server-side price verification
+// ============================================================
+router.post('/', async (req, res) => {
+    try {
+        const { userid, name, Phone, Address, Total, Items, Receipt, Note } = req.body;
 
-    if (!Phone || !Total) {
-        return res.status(400).json({ status: 'error', message: 'Phone and Total are required.' });
-    }
+        if (!Phone) {
+            return res.status(400).json({ status: 'error', message: 'Phone number is required.' });
+        }
+        if (Total === undefined || Total === null || Total === '') {
+            return res.status(400).json({ status: 'error', message: 'Total price is required.' });
+        }
 
-    const safeUserId = userid || 'GUEST';
-    const safeNote = Note || 'គ្មាន';
-    const safeReceipt = Receipt || 'No Receipt';
+        // 1. Parse and validate Items structure
+        let parsedItems = [];
+        try {
+            parsedItems = typeof Items === 'string' ? JSON.parse(Items) : Items;
+        } catch (e) {
+            return res.status(400).json({ status: 'error', message: 'Invalid items data format.' });
+        }
 
-    // Generate ORD-XXXX style order ID
-    db.query('SELECT COUNT(*) AS cnt FROM orders', (err, countResult) => {
-        if (err) return res.status(500).json({ status: 'error', message: err.message });
+        if (!Array.isArray(parsedItems) || parsedItems.length === 0) {
+            return res.status(400).json({ status: 'error', message: 'Order must contain at least one item.' });
+        }
 
+        // Validate quantities for all items before database query
+        for (const item of parsedItems) {
+            const qty = parseInt(item.quantity, 10);
+            if (isNaN(qty) || qty <= 0) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Invalid quantity for item "${item.name || 'Unknown'}". Quantity must be 1 or more.`
+                });
+            }
+        }
+
+        // 2. Fetch all current products from the database for authoritative price matching
+        const [dbProducts] = await pool.query('SELECT id, name, cart_name, price FROM products');
+        const productMap = new Map();
+        dbProducts.forEach(p => productMap.set(p.id, p));
+
+        let calculatedTotal = 0;
+        const verifiedItems = [];
+
+        for (const item of parsedItems) {
+            const qty = parseInt(item.quantity, 10);
+
+            let matchedProduct = null;
+            const prodId = item.productId || item.id;
+            if (prodId && productMap.has(parseInt(prodId, 10))) {
+                matchedProduct = productMap.get(parseInt(prodId, 10));
+            } else {
+                // Fallback: match by name or cart_name prefix
+                const itemName = (item.name || '').trim().toLowerCase();
+                matchedProduct = dbProducts.find(p => {
+                    const pName = (p.name || '').trim().toLowerCase();
+                    const pCartName = (p.cart_name || '').trim().toLowerCase();
+                    return (pCartName && itemName.startsWith(pCartName)) ||
+                        (pName && itemName.startsWith(pName)) ||
+                        (itemName === pName) ||
+                        (itemName === pCartName);
+                });
+            }
+
+            if (!matchedProduct) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Product "${item.name || 'Unknown'}" is not found or is no longer available in the store.`
+                });
+            }
+
+            const officialPrice = parseFloat(matchedProduct.price);
+            if (isNaN(officialPrice) || officialPrice < 0) {
+                return res.status(500).json({
+                    status: 'error',
+                    message: `Store pricing error for product "${matchedProduct.name}".`
+                });
+            }
+
+            const itemSubtotal = officialPrice * qty;
+            calculatedTotal += itemSubtotal;
+
+            verifiedItems.push({
+                productId: matchedProduct.id,
+                name: item.name || matchedProduct.name,
+                price: officialPrice,
+                quantity: qty
+            });
+        }
+
+        // 3. Compare client-submitted total against authoritative calculated total
+        const clientTotal = parseFloat(Total);
+        if (isNaN(clientTotal)) {
+            return res.status(400).json({ status: 'error', message: 'Valid numerical Total is required.' });
+        }
+
+        // Allow at most 5 cents ($0.05) tolerance for minor float rounding
+        if (Math.abs(clientTotal - calculatedTotal) > 0.05) {
+            return res.status(400).json({
+                status: 'error',
+                code: 'PRICE_MISMATCH',
+                message: `Price mismatch detected! Submitted total ($${clientTotal.toFixed(2)}) does not match verified cart total ($${calculatedTotal.toFixed(2)}).`,
+                submittedTotal: clientTotal,
+                calculatedTotal: parseFloat(calculatedTotal.toFixed(2))
+            });
+        }
+
+        // Enforce the verified total and verified items
+        const verifiedTotalStr = calculatedTotal.toFixed(2);
+        const verifiedItemsJson = JSON.stringify(verifiedItems);
+
+        const safeUserId = userid || 'GUEST';
+        const safeNote = Note || 'គ្មាន';
+
+        // 4. Handle receipt image: Upload Base64 to Cloudinary so we only store clean HTTPS URLs in MySQL
+        let safeReceipt = 'No Receipt';
+        if (Receipt && Receipt !== 'No Receipt') {
+            if (Receipt.startsWith('http://') || Receipt.startsWith('https://')) {
+                safeReceipt = Receipt;
+            } else if (Receipt.length > 50) {
+                try {
+                    const base64Data = Receipt.includes(',') ? Receipt.split(',')[1] : Receipt;
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    safeReceipt = await uploadToCloudinary(buffer, 'jingjang_store/receipts');
+                    console.log(`✅ Receipt uploaded to Cloudinary: ${safeReceipt}`);
+                } catch (uploadErr) {
+                    console.warn('⚠️ Could not upload receipt to Cloudinary, saving No Receipt fallback:', uploadErr.message);
+                    safeReceipt = 'No Receipt';
+                }
+            }
+        }
+
+        // 4. Generate next ORD-XXXX identifier
+        const [countResult] = await pool.query('SELECT COUNT(*) AS cnt FROM orders');
         const newNum = (countResult[0].cnt || 0) + 1;
         const orderId = 'ORD-' + ('0000' + newNum).slice(-4);
 
-        // Initial status history JSON
+        // Initial status history
         const now = new Date();
         const formattedDate = now.toLocaleString('en-GB', {
             day: '2-digit', month: '2-digit', year: 'numeric',
@@ -258,34 +425,47 @@ router.post('/', (req, res) => {
         });
         const initialHistory = JSON.stringify([{ status: 'Pending', date: formattedDate }]);
 
-        const sql = `
+        const insertSql = `
             INSERT INTO orders 
             (order_id_str, userid, name, Phone, Address, Total, Items, Receipt, CurrentStatus, Note, status_history)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
         `;
 
-        db.query(sql, [orderId, safeUserId, name || '', Phone, Address || '', Total, Items || '', safeReceipt, safeNote, initialHistory], (err2, result) => {
-            if (err2) return res.status(500).json({ status: 'error', message: err2.message });
+        await pool.query(insertSql, [
+            orderId,
+            safeUserId,
+            name || '',
+            Phone,
+            Address || '',
+            verifiedTotalStr,
+            verifiedItemsJson,
+            safeReceipt,
+            safeNote,
+            initialHistory
+        ]);
 
-            // 🚀 Send Telegram notification + receipt photo (non-blocking)
-            sendTelegramNotification({
-                userid: safeUserId,
-                name,
-                Phone,
-                Address,
-                Total,
-                Items,
-                Note: safeNote,
-                Receipt: safeReceipt   // ← pass receipt base64 so Telegram can send it as photo
-            }, orderId);
+        // 5. Send Telegram notification with authoritative verified data (non-blocking)
+        sendTelegramNotification({
+            userid: safeUserId,
+            name,
+            Phone,
+            Address,
+            Total: verifiedTotalStr,
+            Items: verifiedItemsJson,
+            Note: safeNote,
+            Receipt: safeReceipt
+        }, orderId);
 
-            res.status(201).json({
-                status: 'success',
-                orderId: orderId,
-                message: 'Order created successfully'
-            });
+        res.status(201).json({
+            status: 'success',
+            orderId: orderId,
+            total: parseFloat(verifiedTotalStr),
+            message: 'Order created successfully'
         });
-    });
+    } catch (err) {
+        console.error('Error creating order:', err);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
 });
 
 // ============================================================

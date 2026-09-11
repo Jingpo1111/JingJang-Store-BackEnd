@@ -60,6 +60,11 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // ============================================================
+// Rate Limiting & Security Middlewares
+// ============================================================
+const { authLimiter, otpLimiter, apiLimiter } = require('./middleware/rateLimiter.js');
+
+// ============================================================
 // Routes
 // ============================================================
 const authRouter = require('./routes/auth.routes.js');
@@ -69,12 +74,12 @@ const otpRouter = require('./routes/otp.routes.js');
 const categoryRouter = require('./routes/category.routes.js');
 const productRouter = require('./routes/product.routes.js');
 
-app.use('/auth', authRouter);
-app.use('/user', userRouter);
-app.use('/order', orderRouter);
-app.use('/otp', otpRouter);
-app.use('/categories', categoryRouter);
-app.use('/products', productRouter);
+app.use('/auth', authLimiter, authRouter);
+app.use('/otp', otpLimiter, otpRouter);
+app.use('/user', apiLimiter, userRouter);
+app.use('/order', apiLimiter, orderRouter);
+app.use('/categories', apiLimiter, categoryRouter);
+app.use('/products', apiLimiter, productRouter);
 
 // Serve Frontend & Admin static assets
 const path = require('path');
@@ -91,6 +96,31 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         message: 'JingJang Store API is running.',
         user: req.user ? req.user.name : null
+    });
+});
+
+// 404 Handler for undefined API routes
+app.use((req, res, next) => {
+    const apiPrefixes = ['/api', '/auth', '/user', '/order', '/otp', '/categories', '/products'];
+    if (apiPrefixes.some(prefix => req.path.startsWith(prefix))) {
+        return res.status(404).json({
+            status: 'error',
+            message: `API route ${req.method} ${req.originalUrl} not found.`
+        });
+    }
+    next();
+});
+
+// Central Error Handler Middleware
+app.use((err, req, res, next) => {
+    console.error('💥 Unhandled Server Error:', err);
+    if (res.headersSent) {
+        return next(err);
+    }
+    const statusCode = err.status || err.statusCode || 500;
+    res.status(statusCode).json({
+        status: 'error',
+        message: err.message || 'Internal Server Error'
     });
 });
 
