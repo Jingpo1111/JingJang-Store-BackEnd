@@ -4,7 +4,7 @@ const db = require('../db/database');
 const https = require('https');
 
 // ============================================================
-// Helper: Send Telegram text messag
+// Helper: Send Telegram text messa
 // ============================================================
 function sendTelegramMessage(BOT_TOKEN, CHAT_ID, message) {
     return new Promise((resolve) => {
