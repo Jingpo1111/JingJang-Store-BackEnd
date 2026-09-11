@@ -4,8 +4,8 @@ const db = require('../db/database');
 const https = require('https');
 
 // ============================================================
-// Helper: Send Telegram text message
-// ============================================================
+// Helper: Send Telegram text messa
+// ===============================================
 function sendTelegramMessage(BOT_TOKEN, CHAT_ID, message) {
     return new Promise((resolve) => {
         try {
@@ -106,7 +106,7 @@ function sendTelegramPhoto(BOT_TOKEN, CHAT_ID, imageBase64, caption) {
 // ============================================================
 function sendTelegramNotification(orderData, orderId) {
     const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-    const CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
+    const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
     if (!BOT_TOKEN || !CHAT_ID) {
         console.warn('⚠️  Telegram: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set in .env');
@@ -269,13 +269,13 @@ router.post('/', (req, res) => {
 
             // 🚀 Send Telegram notification + receipt photo (non-blocking)
             sendTelegramNotification({
-                userid:  safeUserId,
+                userid: safeUserId,
                 name,
                 Phone,
                 Address,
                 Total,
                 Items,
-                Note:    safeNote,
+                Note: safeNote,
                 Receipt: safeReceipt   // ← pass receipt base64 so Telegram can send it as photo
             }, orderId);
 

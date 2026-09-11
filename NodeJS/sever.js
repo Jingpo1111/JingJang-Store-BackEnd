@@ -63,9 +63,9 @@ app.use(passport.session());
 // Routes
 // ============================================================
 const authRouter = require('./routes/auth.routes.js');
-const userRouter = require('./routes/user.js');
-const orderRouter = require('./routes/order.js');
-const otpRouter = require('./routes/otp.js');
+const userRouter = require('./routes/user.routes.js');
+const orderRouter = require('./routes/order.routes.js');
+const otpRouter = require('./routes/otp.routes.js');
 const categoryRouter = require('./routes/category.routes.js');
 const productRouter = require('./routes/product.routes.js');
 
