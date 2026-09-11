@@ -11,7 +11,7 @@ require('dotenv').config();
 
 const app = express();
 
-// Database connections
+
 require('./db/database');
 require('./db/dbPromise');
 
