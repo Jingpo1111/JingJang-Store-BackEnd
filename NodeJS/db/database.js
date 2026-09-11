@@ -1,9 +1,6 @@
 require('dotenv').config(); // load variables from .env file
 const mysql = require('mysql2');
 
-const fs = require('fs');
-const path = require('path');
-
 // Configure the MySQL connection using .env variables
 const connectionConfig = {
     host: process.env.DB_HOST,
@@ -14,25 +11,6 @@ const connectionConfig = {
     timezone: 'Z'
 };
 
-// Handle SSL if configured
-if (process.env.DB_SSL_CA) {
-    const caPath = path.resolve(process.env.DB_SSL_CA);
-    if (fs.existsSync(caPath)) {
-        connectionConfig.ssl = {
-            ca: fs.readFileSync(caPath)
-        };
-    } else {
-        // Fallback to checking aiven/ca.pem if certs/ca.pem does not exist
-        const fallbackPath = path.resolve('aiven/ca.pem');
-        if (fs.existsSync(fallbackPath)) {
-            connectionConfig.ssl = {
-                ca: fs.readFileSync(fallbackPath)
-            };
-        } else {
-            console.warn(`⚠️ SSL CA file not found at: ${caPath} or ${fallbackPath}. Connecting without SSL CA...`);
-        }
-    }
-}
 
 const db = mysql.createConnection(connectionConfig);
 
