@@ -35,23 +35,48 @@ app.use((req, res, next) => {
 const allowedOrigins = [
     'https://www.jingjangstore.com',
     'https://jingjangstore.com',
-    process.env.FRONTEND_URL
+    'https://admin.jingjangstore.com',
+    'https://jingjang-store-admin.vercel.app',
+    'https://jingjang-store.vercel.app',
+    process.env.FRONTEND_URL,
+    process.env.ADMIN_URL
 ].filter(Boolean);
 
-app.use(cors({
+if (process.env.ALLOWED_ORIGINS) {
+    allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()));
+}
+
+const isOriginAllowed = (origin) => {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+    if (/^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(origin)) return true;
+    if (/^https:\/\/[a-zA-Z0-9_-]+\.github\.io$/.test(origin)) return true;
+    return false;
+};
+
+const corsOptions = {
     origin: (origin, callback) => {
-        // Allow requests with no origin (e.g. mobile apps, curl, or same-origin)
-        if (!origin) return callback(null, true);
-        if (
-            allowedOrigins.includes(origin) ||
-            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-        ) {
+        if (isOriginAllowed(origin)) {
             return callback(null, true);
         }
-        return callback(new Error('CORS policy: This origin is not allowed access.'));
+        return callback(null, false);
     },
-    credentials: true
-}));
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-admin-key',
+        'X-Admin-Key',
+        'Accept',
+        'Origin',
+        'X-Requested-With'
+    ]
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));      // allow large base64 receipt images
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
