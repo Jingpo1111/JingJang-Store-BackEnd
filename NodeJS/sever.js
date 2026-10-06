@@ -56,12 +56,7 @@ const isOriginAllowed = (origin) => {
 };
 
 const corsOptions = {
-    origin: (origin, callback) => {
-        if (isOriginAllowed(origin)) {
-            return callback(null, true);
-        }
-        return callback(null, false);
-    },
+    origin: (origin, callback) => callback(null, true),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
