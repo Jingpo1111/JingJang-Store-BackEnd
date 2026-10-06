@@ -71,7 +71,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('/{*path}', cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));      // allow large base64 receipt images
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
