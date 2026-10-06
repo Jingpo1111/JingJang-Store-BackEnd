@@ -23,6 +23,16 @@ db.getConnection((err, connection) => {
         return;
     }
     console.log('✅ Connected to MySQL database pool.');
+
+    // Auto-ensure role column exists in users table
+    connection.query("SHOW COLUMNS FROM users LIKE 'role'", (colErr, rows) => {
+        if (!colErr && rows && rows.length === 0) {
+            connection.query("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'customer'", (alterErr) => {
+                if (!alterErr) console.log("✅ Added 'role' column to users table.");
+            });
+        }
+    });
+
     connection.release();
 });
 

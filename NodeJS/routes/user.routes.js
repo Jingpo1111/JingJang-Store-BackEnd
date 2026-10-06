@@ -2,13 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/database');
 const { verifyResetTokenHMAC } = require('../utils/token.util');
-
-// ============================================================
-// Helper: base64 encode password (same as Utilities.base64Encode in Apps Script)
-// ============================================================
-function base64Encode(str) {
-    return Buffer.from(str).toString('base64');
-}
+const { hashPassword, verifyPassword } = require('../utils/password.util');
+const { isAdminAuthenticated } = require('../middleware/auth.middleware');
 
 // ============================================================
 // Helper: Generate User ID like JJ-0001, JJ-0002...
@@ -17,11 +12,12 @@ function generateUserId(lastCount) {
     return 'JJ-' + ('0000' + lastCount).slice(-4);
 }
 
-// =====================================================
-// GET /user — Get all users (Admin Dashboard)
 // ============================================================
-router.get('/', (req, res) => {
-    const sql = 'SELECT userid_str AS userId, username, email, register_date AS registerDate FROM users ORDER BY userid DESC';
+// GET /user — Get all users (Admin Dashboard Only)
+// Protected by isAdminAuthenticated
+// ============================================================
+router.get('/', isAdminAuthenticated, (req, res) => {
+    const sql = 'SELECT userid_str AS userId, username, email, role, register_date AS registerDate FROM users ORDER BY userid DESC';
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         const formatted = results.map(u => {
@@ -41,7 +37,6 @@ router.get('/', (req, res) => {
 
 // ============================================================
 // POST /user/check-register — Check if username or email is already taken
-// (mirrors action: "checkRegister" in AuthScript.gs)
 // ============================================================
 router.post('/check-register', (req, res) => {
     const { username, email } = req.body;
@@ -51,15 +46,15 @@ router.post('/check-register', (req, res) => {
     }
 
     const sql = 'SELECT username, email FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)';
-    db.query(sql, [username, email], (err, results) => {
+    db.query(sql, [username.trim(), email.trim()], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
 
         if (results.length > 0) {
             const found = results[0];
-            if (found.username.toLowerCase() === username.toLowerCase()) {
+            if (found.username.toLowerCase() === username.trim().toLowerCase()) {
                 return res.json({ status: 'error', message: 'Username already exists. Please choose another.' });
             }
-            if (found.email.toLowerCase() === email.toLowerCase()) {
+            if (found.email.toLowerCase() === email.trim().toLowerCase()) {
                 return res.json({ status: 'error', message: 'Email already registered. Please use another email.' });
             }
         }
@@ -69,8 +64,7 @@ router.post('/check-register', (req, res) => {
 });
 
 // ============================================================
-// POST /user/register — Register new user
-// (mirrors action: "register" in AuthScript.gs)
+// POST /user/register — Register new user with strong scrypt hashing
 // ============================================================
 router.post('/register', (req, res) => {
     const { username, password, email } = req.body;
@@ -78,24 +72,28 @@ router.post('/register', (req, res) => {
     if (!username || !password || !email) {
         return res.status(400).json({ status: 'error', message: 'Username, password, and email are required.' });
     }
-    if (password.length < 4) {
-        return res.status(400).json({ status: 'error', message: 'Password must be at least 4 characters.' });
+    if (password.length < 6) {
+        return res.status(400).json({ status: 'error', message: 'Password must be at least 6 characters long for security.' });
     }
+
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
     // Check if username or email is taken
     const checkSql = 'SELECT username, email FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)';
-    db.query(checkSql, [username, email], (err, existing) => {
+    db.query(checkSql, [cleanUsername, cleanEmail], (err, existing) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
 
         if (existing.length > 0) {
             const found = existing[0];
-            if (found.username.toLowerCase() === username.toLowerCase()) {
+            if (found.username.toLowerCase() === cleanUsername.toLowerCase()) {
                 return res.json({ status: 'error', message: 'Username already exists. Please choose another.' });
             }
             return res.json({ status: 'error', message: 'Email already registered. Please use another email.' });
         }
 
-        const encodedPassword = base64Encode(password);
+        // Cryptographically secure password hash using scrypt
+        const hashedPassword = hashPassword(password);
 
         // Count total users to create JJ-XXXX style ID
         db.query('SELECT COUNT(*) AS cnt FROM users', (err2, countResult) => {
@@ -108,16 +106,27 @@ router.post('/register', (req, res) => {
                 hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Phnom_Penh'
             });
 
-            const insertSql = 'INSERT INTO users (userid_str, username, password, email, register_date) VALUES (?, ?, ?, ?, NOW())';
-            db.query(insertSql, [userId, username, encodedPassword, email], (err3) => {
+            const insertSql = 'INSERT INTO users (userid_str, username, password, email, role, register_date) VALUES (?, ?, ?, ?, "customer", NOW())';
+            db.query(insertSql, [userId, cleanUsername, hashedPassword, cleanEmail], (err3, insertResult) => {
                 if (err3) return res.status(500).json({ status: 'error', message: err3.message });
+
+                // Initialize server session
+                if (req.session) {
+                    req.session.user = {
+                        id: insertResult.insertId,
+                        userId: userId,
+                        username: cleanUsername,
+                        email: cleanEmail,
+                        role: 'customer'
+                    };
+                }
 
                 res.status(201).json({
                     status: 'success',
                     action: 'register',
                     userId: userId,
-                    username: username,
-                    email: email,
+                    username: cleanUsername,
+                    email: cleanEmail,
                     registerDate: registerDate,
                     message: 'Registration successful! Your User ID is: ' + userId
                 });
@@ -127,8 +136,8 @@ router.post('/register', (req, res) => {
 });
 
 // ============================================================
-// POST /user/login — Login by username or email + base64 password
-// (mirrors action: "login" in AuthScript.gs)
+// POST /user/login — Login with password verification and session establishment
+// Supports auto-migration from legacy Base64 to scrypt
 // ============================================================
 router.post('/login', (req, res) => {
     const { username, password } = req.body;
@@ -137,38 +146,69 @@ router.post('/login', (req, res) => {
         return res.status(400).json({ status: 'error', message: 'Username/Email and password are required.' });
     }
 
-    const encodedPassword = base64Encode(password);
-    const sql = 'SELECT * FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) AND password = ?';
-    db.query(sql, [username, username, encodedPassword], (err, results) => {
+    const cleanIdentifier = username.trim();
+    const sql = 'SELECT * FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) LIMIT 1';
+
+    db.query(sql, [cleanIdentifier, cleanIdentifier], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
 
-        if (results.length > 0) {
-            const user = results[0];
-            res.json({
-                status: 'success',
-                action: 'login',
-                userId: user.userid_str || ('JJ-' + ('0000' + user.userid).slice(-4)),
-                username: user.username,
-                email: user.email || '',
-                registerDate: user.register_date || '',
-                message: 'Login successful!'
-            });
-        } else {
-            res.json({ status: 'error', message: 'Invalid username/email or password.' });
+        if (results.length === 0) {
+            return res.status(401).json({ status: 'error', message: 'Invalid username/email or password.' });
         }
+
+        const user = results[0];
+        const { valid, needsUpgrade } = verifyPassword(password, user.password);
+
+        if (!valid) {
+            return res.status(401).json({ status: 'error', message: 'Invalid username/email or password.' });
+        }
+
+        // Seamless security auto-upgrade: hash legacy password to modern scrypt in background
+        if (needsUpgrade) {
+            try {
+                const newHash = hashPassword(password);
+                db.query('UPDATE users SET password = ? WHERE userid = ?', [newHash, user.userid], (upErr) => {
+                    if (upErr) console.warn('Could not auto-upgrade user password hash:', upErr.message);
+                    else console.log(`🔒 Auto-upgraded password hash to scrypt for user ${user.username}`);
+                });
+            } catch (e) { }
+        }
+
+        // Establish secure server-side session
+        const sessionPayload = {
+            id: user.userid,
+            userId: user.userid_str || ('JJ-' + ('0000' + user.userid).slice(-4)),
+            username: user.username,
+            email: user.email || '',
+            role: user.role || 'customer'
+        };
+
+        if (req.session) {
+            req.session.user = sessionPayload;
+        }
+
+        res.json({
+            status: 'success',
+            action: 'login',
+            userId: sessionPayload.userId,
+            username: user.username,
+            email: user.email || '',
+            role: user.role || 'customer',
+            registerDate: user.register_date || '',
+            message: 'Login successful!'
+        });
     });
 });
 
 // ============================================================
 // POST /user/check-email — Check if email is registered
-// (mirrors action: "checkEmail" in AuthScript.gs)
 // ============================================================
 router.post('/check-email', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ status: 'error', message: 'Email is required.' });
 
-    const sql = 'SELECT email FROM users WHERE LOWER(email) = LOWER(?)';
-    db.query(sql, [email], (err, results) => {
+    const sql = 'SELECT email FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1';
+    db.query(sql, [email.trim()], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (results.length > 0) {
             res.json({ status: 'success', message: 'Email is registered.' });
@@ -180,13 +220,12 @@ router.post('/check-email', (req, res) => {
 
 // ============================================================
 // POST /user/get-info — Get user info by userId_str
-// (mirrors action: "getUserInfo" in AuthScript.gs)
 // ============================================================
 router.post('/get-info', (req, res) => {
     const { userId } = req.body;
     if (!userId) return res.status(400).json({ status: 'error', message: 'User ID is required.' });
 
-    const sql = 'SELECT userid_str, username, email, register_date FROM users WHERE userid_str = ?';
+    const sql = 'SELECT userid_str, username, email, role, register_date FROM users WHERE userid_str = ? LIMIT 1';
     db.query(sql, [userId], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (results.length > 0) {
@@ -202,12 +241,12 @@ router.post('/get-info', (req, res) => {
                 userId: u.userid_str,
                 username: u.username,
                 email: u.email || '',
+                role: u.role || 'customer',
                 registerDate: formattedDate,
                 rawDate: u.register_date
             });
         } else {
-            // Also check customers table if not found by string ID in users
-            const custSql = 'SELECT id, google_id, name, email, created_at FROM customers WHERE id = ? OR google_id = ?';
+            const custSql = 'SELECT id, google_id, name, email, role, created_at FROM customers WHERE id = ? OR google_id = ? LIMIT 1';
             db.query(custSql, [userId, userId], (custErr, custResults) => {
                 if (custErr || custResults.length === 0) {
                     return res.json({ status: 'error', message: 'User not found.' });
@@ -224,6 +263,7 @@ router.post('/get-info', (req, res) => {
                     userId: 'JJ-' + ('0000' + c.id).slice(-4),
                     username: c.name,
                     email: c.email || '',
+                    role: c.role || 'customer',
                     registerDate: formattedDate,
                     rawDate: c.created_at
                 });
@@ -233,8 +273,7 @@ router.post('/get-info', (req, res) => {
 });
 
 // ============================================================
-// POST /user/change-password — Change password (verify current pw first)
-// (mirrors action: "changePassword" in AuthScript.gs)
+// POST /user/change-password — Change password with verification
 // ============================================================
 router.post('/change-password', (req, res) => {
     const { userId, currentPassword, newPassword } = req.body;
@@ -242,23 +281,27 @@ router.post('/change-password', (req, res) => {
     if (!userId || !currentPassword || !newPassword) {
         return res.status(400).json({ status: 'error', message: 'All fields are required.' });
     }
-    if (newPassword.length < 4) {
-        return res.status(400).json({ status: 'error', message: 'New password must be at least 4 characters.' });
+    if (newPassword.length < 6) {
+        return res.status(400).json({ status: 'error', message: 'New password must be at least 6 characters long.' });
     }
 
-    const encodedCurrent = base64Encode(currentPassword);
-    const encodedNew = base64Encode(newPassword);
-
-    // Verify current password
-    const sql = 'SELECT userid FROM users WHERE userid_str = ? AND password = ?';
-    db.query(sql, [userId, encodedCurrent], (err, results) => {
+    // Verify current password with scrypt/legacy support
+    const sql = 'SELECT userid, password FROM users WHERE userid_str = ? LIMIT 1';
+    db.query(sql, [userId], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (results.length === 0) {
-            return res.json({ status: 'error', message: 'Current password is incorrect.' });
+            return res.status(404).json({ status: 'error', message: 'Account not found.' });
         }
 
+        const user = results[0];
+        const { valid } = verifyPassword(currentPassword, user.password);
+        if (!valid) {
+            return res.status(400).json({ status: 'error', message: 'Current password is incorrect.' });
+        }
+
+        const hashedNewPassword = hashPassword(newPassword);
         const updateSql = 'UPDATE users SET password = ? WHERE userid_str = ?';
-        db.query(updateSql, [encodedNew, userId], (err2) => {
+        db.query(updateSql, [hashedNewPassword, userId], (err2) => {
             if (err2) return res.status(500).json({ status: 'error', message: err2.message });
             res.json({ status: 'success', message: 'Password changed successfully!' });
         });
@@ -281,11 +324,11 @@ router.post('/reset-password', (req, res) => {
     if ((!email && !userId) || !newPassword) {
         return res.status(400).json({ status: 'error', message: 'Email or User ID, and new password are required.' });
     }
-    if (newPassword.length < 4) {
-        return res.status(400).json({ status: 'error', message: 'New password must be at least 4 characters.' });
+    if (newPassword.length < 6) {
+        return res.status(400).json({ status: 'error', message: 'New password must be at least 6 characters long.' });
     }
 
-    // Step 1: Verify token cryptographic signature and timestamp
+    // Step 1: Verify token cryptographic HMAC signature and timestamp
     const tokenResult = verifyResetTokenHMAC(resetToken);
     if (!tokenResult.valid) {
         return res.status(401).json({ status: 'error', message: tokenResult.message });
@@ -341,7 +384,6 @@ router.post('/reset-password', (req, res) => {
 
             const targetUser = userResults[0];
 
-            // If userId was provided, ensure its account email matches the tokenEmail
             if (userId && targetUser.email.toLowerCase() !== tokenEmail) {
                 return res.status(403).json({
                     status: 'error',
@@ -349,11 +391,11 @@ router.post('/reset-password', (req, res) => {
                 });
             }
 
-            const encodedNew = base64Encode(newPassword);
+            const hashedNewPassword = hashPassword(newPassword);
 
-            // Step 4: Update the password in users table
+            // Step 4: Update the password in users table with secure scrypt hash
             const updatePwSql = 'UPDATE users SET password = ? WHERE userid = ?';
-            db.query(updatePwSql, [encodedNew, targetUser.userid], (updateErr) => {
+            db.query(updatePwSql, [hashedNewPassword, targetUser.userid], (updateErr) => {
                 if (updateErr) {
                     return res.status(500).json({ status: 'error', message: updateErr.message });
                 }
@@ -372,8 +414,7 @@ router.post('/reset-password', (req, res) => {
 });
 
 // ============================================================
-// POST /user/verify-password — Verify password (for logout confirmation)
-// (mirrors action: "verifyPassword" in AuthScript.gs)
+// POST /user/verify-password — Verify password with scrypt / legacy support
 // ============================================================
 router.post('/verify-password', (req, res) => {
     const { userId, password } = req.body;
@@ -381,15 +422,16 @@ router.post('/verify-password', (req, res) => {
         return res.status(400).json({ status: 'error', message: 'User ID and password are required.' });
     }
 
-    const encodedPassword = base64Encode(password);
-    const sql = 'SELECT userid FROM users WHERE userid_str = ? AND password = ?';
-    db.query(sql, [userId, encodedPassword], (err, results) => {
+    const sql = 'SELECT userid, password FROM users WHERE userid_str = ? LIMIT 1';
+    db.query(sql, [userId], (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
         if (results.length > 0) {
-            res.json({ status: 'success', message: 'Password verified.' });
-        } else {
-            res.json({ status: 'error', message: 'Incorrect password.' });
+            const { valid } = verifyPassword(password, results[0].password);
+            if (valid) {
+                return res.json({ status: 'success', message: 'Password verified.' });
+            }
         }
+        res.json({ status: 'error', message: 'Incorrect password.' });
     });
 });
 

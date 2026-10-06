@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/dbPromise');
+const { isAdminAuthenticated } = require('../middleware/auth.middleware');
 
-// GET /categories - Get all categories
+// GET /categories - Get all categories (Public)
 router.get('/', async (req, res) => {
     try {
         const [rows] = await pool.query('SELECT id, name FROM categories ORDER BY name ASC');
@@ -16,8 +17,8 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /categories - Create a new category
-router.post('/', async (req, res) => {
+// POST /categories - Create a new category (Admin Only)
+router.post('/', isAdminAuthenticated, async (req, res) => {
     try {
         const { name } = req.body;
         const trimmedName = (name || '').trim();
@@ -44,8 +45,8 @@ router.post('/', async (req, res) => {
     }
 });
 
-// DELETE /categories/:id - Delete a category
-router.delete('/:id', async (req, res) => {
+// DELETE /categories/:id - Delete a category (Admin Only)
+router.delete('/:id', isAdminAuthenticated, async (req, res) => {
     try {
         const categoryId = req.params.id;
 

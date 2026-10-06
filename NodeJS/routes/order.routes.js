@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db/database');
 const pool = require('../db/dbPromise');
 const { uploadToCloudinary } = require('../config/cloudinary');
+const { isAdminAuthenticated } = require('../middleware/auth.middleware');
 const https = require('https');
 
 // ============================================================
@@ -155,33 +156,42 @@ function sendTelegramNotification(orderData, orderId) {
         return;
     }
 
+    function escapeTelegramHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     // Build items list
     let itemsText = '';
     try {
         const items = JSON.parse(orderData.Items || '[]');
         items.forEach(item => {
             const priceStr = item.price ? ` — $${parseFloat(item.price).toFixed(2)}` : '';
-            itemsText += `\n• <b>${item.name}</b> <b>(x${item.quantity})</b>${priceStr}`;
+            const safeName = escapeTelegramHtml(item.name || 'Item');
+            itemsText += `\n• <b>${safeName}</b> <b>(x${item.quantity})</b>${priceStr}`;
         });
     } catch (e) {
-        itemsText = '\n• ' + (orderData.Items || '');
+        itemsText = '\n• ' + escapeTelegramHtml(orderData.Items || '');
     }
 
-    const address = (orderData.Address || '');
-    const addressLine = address.startsWith('http')
-        ? `📍 អាសយដ្ឋាន: <a href='${address}'>🗺️ បើកមើលផែនទី (Google Maps)</a>`
-        : `📍 អាសយដ្ឋាន: ${address}`;
+    const rawAddress = (orderData.Address || '');
+    const addressLine = rawAddress.startsWith('http')
+        ? `📍 អាសយដ្ឋាន: <a href='${escapeTelegramHtml(rawAddress)}'>🗺️ បើកមើលផែនទី (Google Maps)</a>`
+        : `📍 អាសយដ្ឋាន: ${escapeTelegramHtml(rawAddress)}`;
 
     const message =
         `🔔 <b>មានការបញ្ជាទិញថ្មី (New Order)</b>\n\n` +
-        `🆔 Order ID: <b>${orderId}</b>\n` +
-        `👤 User ID: <b>${orderData.userid || 'GUEST'}</b>\n` +
-        `👤 ឈ្មោះ: ${orderData.name || ''}\n` +
-        `📞 ទូរស័ព្ទ: <code>${orderData.Phone || ''}</code>\n` +
+        `🆔 Order ID: <b>${escapeTelegramHtml(orderId)}</b>\n` +
+        `👤 User ID: <b>${escapeTelegramHtml(orderData.userid || 'GUEST')}</b>\n` +
+        `👤 ឈ្មោះ: ${escapeTelegramHtml(orderData.name || '')}\n` +
+        `📞 ទូរស័ព្ទ: <code>${escapeTelegramHtml(orderData.Phone || '')}</code>\n` +
         `${addressLine}\n` +
         `\n🛍️ <b>ទំនិញដែលបានកុម្ម៉ង់:</b>${itemsText}\n` +
         `\n💰 ទឹកប្រាក់សរុប: <b>$${orderData.Total}</b>\n` +
-        `📝 ចំណាំពីភ្ញៀវ: <b>${orderData.Note || 'គ្មាន'}</b>\n`;
+        `📝 ចំណាំពីភ្ញៀវ: <b>${escapeTelegramHtml(orderData.Note || 'គ្មាន')}</b>\n`;
 
     const hasReceipt = orderData.Receipt && orderData.Receipt !== 'No Receipt' && orderData.Receipt.length > 5;
 
@@ -208,8 +218,9 @@ function sendTelegramNotification(orderData, orderId) {
 
 // ============================================================
 // GET /order — Get all orders (Admin Dashboard)
+// Protected by isAdminAuthenticated
 // ============================================================
-router.get('/', (req, res) => {
+router.get('/', isAdminAuthenticated, (req, res) => {
     const sql = 'SELECT * FROM orders ORDER BY orderid DESC';
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ status: 'error', message: err.message });
@@ -245,10 +256,15 @@ router.get('/', (req, res) => {
 
 // ============================================================
 // GET /order/user/:userId — Get orders by User ID string (e.g. JJ-0001)
-// (mirrors ?action=searchByUser&userId=... in OrderScript.gs)
 // ============================================================
 router.get('/user/:userId', (req, res) => {
     const userId = req.params.userId;
+    const sessionUser = req.user || req.session?.user;
+
+    // If an authenticated session exists, protect against IDOR unless admin
+    if (sessionUser && sessionUser.role !== 'admin' && sessionUser.userId !== userId && sessionUser.userid_str !== userId) {
+        return res.status(403).json({ status: 'error', message: 'Unauthorized to view this order history.' });
+    }
     const sql = 'SELECT * FROM orders WHERE userid = ? ORDER BY orderid DESC';
 
     db.query(sql, [userId], (err, results) => {
@@ -391,7 +407,7 @@ router.post('/', async (req, res) => {
         const verifiedTotalStr = calculatedTotal.toFixed(2);
         const verifiedItemsJson = JSON.stringify(verifiedItems);
 
-        const safeUserId = userid || 'GUEST';
+        const safeUserId = (req.user?.userid_str || req.session?.user?.userId) || (userid || 'GUEST');
         const safeNote = Note || 'គ្មាន';
 
         // 4. Handle receipt image: Upload Base64 to Cloudinary so we only store clean HTTPS URLs in MySQL
@@ -470,9 +486,9 @@ router.post('/', async (req, res) => {
 
 // ============================================================
 // PUT /order/:orderid/status — Update order status + append history
-// (mirrors action: "updateStatus" in OrderScript.gs)
+// Protected by isAdminAuthenticated
 // ============================================================
-router.put('/:orderid/status', (req, res) => {
+router.put('/:orderid/status', isAdminAuthenticated, (req, res) => {
     const orderid = req.params.orderid;
     const { CurrentStatus } = req.body;
 
@@ -516,9 +532,9 @@ router.put('/:orderid/status', (req, res) => {
 
 // ============================================================
 // DELETE /order/:orderid — Delete an order
-// (mirrors action: "deleteOrder" in OrderScript.gs)
+// Protected by isAdminAuthenticated
 // ============================================================
-router.delete('/:orderid', (req, res) => {
+router.delete('/:orderid', isAdminAuthenticated, (req, res) => {
     const orderid = req.params.orderid;
     const isStrId = orderid.startsWith('ORD-');
     const sql = isStrId

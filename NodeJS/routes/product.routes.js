@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const pool = require('../db/dbPromise');
 const { uploadToCloudinary } = require('../config/cloudinary');
+const { isAdminAuthenticated } = require('../middleware/auth.middleware');
 
 // Setup multer with memory storage (max 10MB per file, max 10 files)
 const upload = multer({
@@ -221,8 +222,9 @@ router.get('/:id', async (req, res) => {
 
 // ============================================================
 // POST /products - Create product with Cloudinary multi-image upload
+// Protected by isAdminAuthenticated
 // ============================================================
-router.post('/', upload.array('photos', 10), async (req, res) => {
+router.post('/', isAdminAuthenticated, upload.array('photos', 10), async (req, res) => {
     try {
         const {
             name,
@@ -395,8 +397,9 @@ router.post('/', upload.array('photos', 10), async (req, res) => {
 
 // ============================================================
 // PUT /products/:id - Update product details and optionally add images
+// Protected by isAdminAuthenticated
 // ============================================================
-router.put('/:id', upload.array('photos', 10), async (req, res) => {
+router.put('/:id', isAdminAuthenticated, upload.array('photos', 10), async (req, res) => {
     try {
         const productId = parseInt(req.params.id, 10);
         if (isNaN(productId)) {
@@ -588,8 +591,9 @@ router.put('/:id', upload.array('photos', 10), async (req, res) => {
 
 // ============================================================
 // DELETE /products/:id - Delete product and its images
+// Protected by isAdminAuthenticated
 // ============================================================
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', isAdminAuthenticated, async (req, res) => {
     try {
         const productId = req.params.id;
 

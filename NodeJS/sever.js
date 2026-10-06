@@ -19,9 +19,37 @@ require('./db/dbPromise');
 // Passport configuration
 require('./config/passport');
 
-// CORS configuration (allow credentials for cross-origin cookies)
+// ============================================================
+// Security Hardening Headers (Helmet Equivalent)
+// ============================================================
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+});
+
+// CORS configuration with strict domain whitelisting
+const allowedOrigins = [
+    'https://www.jingjangstore.com',
+    'https://jingjangstore.com',
+    process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl, or same-origin)
+        if (!origin) return callback(null, true);
+        if (
+            allowedOrigins.includes(origin) ||
+            /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+        ) {
+            return callback(null, true);
+        }
+        return callback(new Error('CORS policy: This origin is not allowed access.'));
+    },
     credentials: true
 }));
 
@@ -43,15 +71,16 @@ const sessionStore = new MySQLStore({
     createDatabaseTable: true
 }, pool);
 
-// Express Session Middleware
+// Express Session Middleware with hardened security flags
 app.use(session({
     store: sessionStore,
     secret: process.env.SESSION_SECRET || 'jingjang-store-session-secret-2026',
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false, // works seamlessly on both HTTP and HTTPS
+        secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
+        sameSite: 'lax',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
@@ -59,6 +88,14 @@ app.use(session({
 // Initialize Passport & Session
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Normalize session user so req.user is available for both OAuth and password users
+app.use((req, res, next) => {
+    if (!req.user && req.session && req.session.user) {
+        req.user = req.session.user;
+    }
+    next();
+});
 
 // ============================================================
 // Rate Limiting & Security Middlewares

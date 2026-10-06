@@ -35,6 +35,21 @@ function getFrontendRedirectUrl(req) {
     return (process.env.FRONTEND_URL || 'https://jingjang-store.vercel.app').trim().replace(/\/$/, '');
 }
 
+function isSafeRedirectDomain(urlStr) {
+    if (!urlStr) return false;
+    try {
+        const parsed = new URL(urlStr);
+        const host = parsed.hostname;
+        return host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host === 'jingjang-store.vercel.app' ||
+            host === 'jingjangstore.com' ||
+            host === 'www.jingjangstore.com';
+    } catch (e) {
+        return false;
+    }
+}
+
 // ============================================================
 // GET /auth/google — Initiate Google OAuth 2.0 authentication
 // ============================================================
@@ -50,9 +65,9 @@ router.get('/google', (req, res, next) => {
         `);
     }
 
-    // Save originating frontend address so redirect works accurately (Live Server 5500, port 3000, or Vercel)
+    // Save originating frontend address only if domain is trusted (prevents Open Redirects)
     const referer = req.query.redirect || req.get('referer');
-    if (referer && req.session) {
+    if (referer && req.session && isSafeRedirectDomain(referer)) {
         try {
             const refererUrl = new URL(referer);
             let basePath = refererUrl.origin;
