@@ -4,6 +4,7 @@ const db = require('../db/database');
 const pool = require('../db/dbPromise');
 const { uploadToCloudinary } = require('../config/cloudinary');
 const { isAdminAuthenticated } = require('../middleware/auth.middleware');
+const { calculateDiscount } = require('./promotion.routes');
 const https = require('https');
 
 // ============================================================
@@ -182,6 +183,14 @@ function sendTelegramNotification(orderData, orderId) {
         ? `📍 អាសយដ្ឋាន: <a href='${escapeTelegramHtml(rawAddress)}'>🗺️ បើកមើលផែនទី (Google Maps)</a>`
         : `📍 អាសយដ្ឋាន: ${escapeTelegramHtml(rawAddress)}`;
 
+    let pricingBreakdown = `\n💰 ទឹកប្រាក់សរុប: <b>$${orderData.Total}</b>\n`;
+    if (orderData.promo_code && parseFloat(orderData.discount_amount) > 0) {
+        pricingBreakdown =
+            `\n💵 តម្លៃដើម (Subtotal): $${orderData.subtotal}\n` +
+            `🏷️ កូដបញ្ចុះតម្លៃ: <b>${escapeTelegramHtml(orderData.promo_code)}</b> (-$${orderData.discount_amount})\n` +
+            `💰 ទឹកប្រាក់សរុប (Total): <b>$${orderData.Total}</b>\n`;
+    }
+
     const message =
         `🔔 <b>មានការបញ្ជាទិញថ្មី (New Order)</b>\n\n` +
         `🆔 Order ID: <b>${escapeTelegramHtml(orderId)}</b>\n` +
@@ -190,7 +199,7 @@ function sendTelegramNotification(orderData, orderId) {
         `📞 ទូរស័ព្ទ: <code>${escapeTelegramHtml(orderData.Phone || '')}</code>\n` +
         `${addressLine}\n` +
         `\n🛍️ <b>ទំនិញដែលបានកុម្ម៉ង់:</b>${itemsText}\n` +
-        `\n💰 ទឹកប្រាក់សរុប: <b>$${orderData.Total}</b>\n` +
+        pricingBreakdown +
         `📝 ចំណាំពីភ្ញៀវ: <b>${escapeTelegramHtml(orderData.Note || 'គ្មាន')}</b>\n`;
 
     const hasReceipt = orderData.Receipt && orderData.Receipt !== 'No Receipt' && orderData.Receipt.length > 5;
@@ -241,6 +250,9 @@ router.get('/', isAdminAuthenticated, (req, res) => {
                 name: o.name,
                 phone: o.Phone,
                 address: o.Address,
+                subtotal: o.subtotal !== null && o.subtotal !== undefined ? o.subtotal : o.Total,
+                promoCode: o.promo_code || null,
+                discountAmount: o.discount_amount || '0.00',
                 total: o.Total,
                 items: o.Items,
                 receipt: o.Receipt || 'No Receipt',
@@ -278,6 +290,9 @@ router.get('/user/:userId', (req, res) => {
             name: o.name,
             phone: o.Phone,
             address: o.Address,
+            subtotal: o.subtotal !== null && o.subtotal !== undefined ? o.subtotal : o.Total,
+            promoCode: o.promo_code || null,
+            discountAmount: o.discount_amount || '0.00',
             total: o.Total,
             items: o.Items,
             receipt: o.Receipt || 'No Receipt',
@@ -300,7 +315,7 @@ router.get('/user/:userId', (req, res) => {
 // ============================================================
 router.post('/', async (req, res) => {
     try {
-        const { userid, name, Phone, Address, Total, Items, Receipt, Note } = req.body;
+        const { userid, name, Phone, Address, Total, Items, Receipt, Note, promo_code, promoCode } = req.body;
 
         if (!Phone) {
             return res.status(400).json({ status: 'error', message: 'Phone number is required.' });
@@ -386,31 +401,92 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // 3. Compare client-submitted total against authoritative calculated total
+        // 3. Subtotal before discount & Promo Code Verification
+        const calculatedSubtotal = Math.round(calculatedTotal * 100) / 100;
+        let appliedPromoCode = null;
+        let discountAmount = 0.00;
+        let promoIdToIncrement = null;
+
+        const rawPromo = (promo_code || promoCode || '').trim().toUpperCase();
+        if (rawPromo) {
+            const [promoRows] = await pool.query('SELECT * FROM promotions WHERE code = ?', [rawPromo]);
+            if (promoRows.length === 0) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" is invalid or does not exist.`
+                });
+            }
+
+            const promo = promoRows[0];
+            if (!promo.is_active) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" is no longer active.`
+                });
+            }
+
+            const now = new Date();
+            if (promo.start_date && new Date(promo.start_date) > now) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" is not yet active.`
+                });
+            }
+            if (promo.end_date && new Date(promo.end_date) < now) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" has expired.`
+                });
+            }
+            if (promo.usage_limit !== null && promo.used_count >= promo.usage_limit) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" has reached its maximum usage limit.`
+                });
+            }
+
+            const minAmount = parseFloat(promo.min_order_amount) || 0;
+            if (calculatedSubtotal < minAmount) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: `Promo code "${rawPromo}" requires a minimum order of $${minAmount.toFixed(2)}. (Your order subtotal: $${calculatedSubtotal.toFixed(2)})`
+                });
+            }
+
+            discountAmount = calculateDiscount(promo, calculatedSubtotal);
+            appliedPromoCode = promo.code;
+            promoIdToIncrement = promo.id;
+        }
+
+        const authoritativeFinalTotal = Math.max(0, Math.round((calculatedSubtotal - discountAmount) * 100) / 100);
+
+        // 4. Compare client-submitted total against authoritative calculated total
         const clientTotal = parseFloat(Total);
         if (isNaN(clientTotal)) {
             return res.status(400).json({ status: 'error', message: 'Valid numerical Total is required.' });
         }
 
         // Allow at most 5 cents ($0.05) tolerance for minor float rounding
-        if (Math.abs(clientTotal - calculatedTotal) > 0.05) {
+        if (Math.abs(clientTotal - authoritativeFinalTotal) > 0.05) {
             return res.status(400).json({
                 status: 'error',
                 code: 'PRICE_MISMATCH',
-                message: `Price mismatch detected! Submitted total ($${clientTotal.toFixed(2)}) does not match verified cart total ($${calculatedTotal.toFixed(2)}).`,
+                message: `Price mismatch detected! Submitted total ($${clientTotal.toFixed(2)}) does not match verified total ($${authoritativeFinalTotal.toFixed(2)}).`,
                 submittedTotal: clientTotal,
-                calculatedTotal: parseFloat(calculatedTotal.toFixed(2))
+                calculatedTotal: authoritativeFinalTotal,
+                subtotal: calculatedSubtotal,
+                discount: discountAmount
             });
         }
 
         // Enforce the verified total and verified items
-        const verifiedTotalStr = calculatedTotal.toFixed(2);
+        const verifiedTotalStr = authoritativeFinalTotal.toFixed(2);
         const verifiedItemsJson = JSON.stringify(verifiedItems);
 
         const safeUserId = (req.user?.userid_str || req.session?.user?.userId) || (userid || 'GUEST');
         const safeNote = Note || 'គ្មាន';
 
-        // 4. Handle receipt image: Upload Base64 to Cloudinary so we only store clean HTTPS URLs in MySQL
+        // 5. Handle receipt image: Upload Base64 to Cloudinary so we only store clean HTTPS URLs in MySQL
         let safeReceipt = 'No Receipt';
         if (Receipt && Receipt !== 'No Receipt') {
             if (Receipt.startsWith('http://') || Receipt.startsWith('https://')) {
@@ -428,7 +504,7 @@ router.post('/', async (req, res) => {
             }
         }
 
-        // 4. Generate next ORD-XXXX identifier
+        // 6. Generate next ORD-XXXX identifier
         const [countResult] = await pool.query('SELECT COUNT(*) AS cnt FROM orders');
         const newNum = (countResult[0].cnt || 0) + 1;
         const orderId = 'ORD-' + ('0000' + newNum).slice(-4);
@@ -443,8 +519,8 @@ router.post('/', async (req, res) => {
 
         const insertSql = `
             INSERT INTO orders 
-            (order_id_str, userid, name, Phone, Address, Total, Items, Receipt, CurrentStatus, Note, status_history)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
+            (order_id_str, userid, name, Phone, Address, subtotal, promo_code, discount_amount, Total, Items, Receipt, CurrentStatus, Note, status_history)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)
         `;
 
         await pool.query(insertSql, [
@@ -453,6 +529,9 @@ router.post('/', async (req, res) => {
             name || '',
             Phone,
             Address || '',
+            calculatedSubtotal.toFixed(2),
+            appliedPromoCode,
+            discountAmount.toFixed(2),
             verifiedTotalStr,
             verifiedItemsJson,
             safeReceipt,
@@ -460,12 +539,20 @@ router.post('/', async (req, res) => {
             initialHistory
         ]);
 
-        // 5. Send Telegram notification with authoritative verified data (non-blocking)
+        // Increment promo usage counter if applicable
+        if (promoIdToIncrement) {
+            await pool.query('UPDATE promotions SET used_count = used_count + 1 WHERE id = ?', [promoIdToIncrement]);
+        }
+
+        // 7. Send Telegram notification with authoritative verified data (non-blocking)
         sendTelegramNotification({
             userid: safeUserId,
             name,
             Phone,
             Address,
+            subtotal: calculatedSubtotal.toFixed(2),
+            promo_code: appliedPromoCode,
+            discount_amount: discountAmount.toFixed(2),
             Total: verifiedTotalStr,
             Items: verifiedItemsJson,
             Note: safeNote,
@@ -475,6 +562,9 @@ router.post('/', async (req, res) => {
         res.status(201).json({
             status: 'success',
             orderId: orderId,
+            subtotal: calculatedSubtotal,
+            promoCode: appliedPromoCode,
+            discountAmount: discountAmount,
             total: parseFloat(verifiedTotalStr),
             message: 'Order created successfully'
         });

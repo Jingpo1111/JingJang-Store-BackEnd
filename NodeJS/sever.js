@@ -111,6 +111,7 @@ const orderRouter = require('./routes/order.routes.js');
 const otpRouter = require('./routes/otp.routes.js');
 const categoryRouter = require('./routes/category.routes.js');
 const productRouter = require('./routes/product.routes.js');
+const { router: promotionRouter } = require('./routes/promotion.routes.js');
 
 app.use('/auth', authLimiter, authRouter);
 app.use('/otp', otpLimiter, otpRouter);
@@ -118,6 +119,7 @@ app.use('/user', apiLimiter, userRouter);
 app.use('/order', apiLimiter, orderRouter);
 app.use('/categories', apiLimiter, categoryRouter);
 app.use('/products', apiLimiter, productRouter);
+app.use('/promotion', apiLimiter, promotionRouter);
 
 // Serve Frontend & Admin static assets
 const path = require('path');
@@ -139,7 +141,7 @@ app.get('/api/health', (req, res) => {
 
 // 404 Handler for undefined API routes
 app.use((req, res, next) => {
-    const apiPrefixes = ['/api', '/auth', '/user', '/order', '/otp', '/categories', '/products'];
+    const apiPrefixes = ['/api', '/auth', '/user', '/order', '/otp', '/categories', '/products', '/promotion'];
     if (apiPrefixes.some(prefix => req.path.startsWith(prefix))) {
         return res.status(404).json({
             status: 'error',
