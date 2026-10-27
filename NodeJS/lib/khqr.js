@@ -1,6 +1,6 @@
 /**
  * JingJangStore - KHQR Payment Integration Module
- * Handles EMVCo KHQR generation, CRC-16 checksums, and QR code rendering for ABA Bank & ACLEDA Bank.
+ * Handles EMVCo KHQR generation, CRC-16 checksums, and QR code rendering for ABA Bank.
  */
 
 const QRCode = require('qrcode');
@@ -19,12 +19,6 @@ const DEFAULT_CONFIG = {
     accountDual: '010777268',     // USD Account (for ABA P2P Tag 40)
     p2pToken: '6C87B76C22F9',     // ABA P2P Merchant Token
     beneficiaryName: 'JINGPO PHAI' // Exact name registered with ABA Bank (Tag 59)
-  },
-  acleda: {
-    bankId: 'khqr@aclb',
-    accountNumber: '011185517829743',
-    beneficiaryName: 'PHAI JINGPO', // Exact name registered with ACLEDA Bank
-    serviceTag: '016441653'
   }
 };
 
@@ -106,7 +100,7 @@ function buildABAPayload({ amount, currency = 'USD', config = DEFAULT_CONFIG }) 
 
   s += '5802KH'
     + '59' + len(beneficiaryName) + beneficiaryName
-    + '6010' + cityName;
+    + '60' + len(cityName) + cityName;
 
   // Rule 2: Mandatory Tag 99 for Dynamic QR (010212) with 13-digit millisecond timestamps
   if (poi === '12') {
@@ -124,54 +118,7 @@ function buildABAPayload({ amount, currency = 'USD', config = DEFAULT_CONFIG }) 
 }
 
 /**
- * Generate raw KHQR string for ACLEDA Bank
- */
-function buildACLEDAPayload({ amount, currency = 'USD', billNumber = '', config = DEFAULT_CONFIG }) {
-  const isUSD = currency.toUpperCase() === 'USD';
-  const cur = isUSD ? '840' : '116';
-  const amt = isUSD ? Number(amount).toFixed(2) : String(Math.round(amount));
-  const sanitizedBill = String(billNumber || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 25);
-  const extra = (sanitizedBill ? '01' + len(sanitizedBill) + sanitizedBill : '') + '0209' + config.acleda.serviceTag;
-
-  const { bankId, accountNumber, beneficiaryName } = config.acleda;
-  const cityName = config.merchantCity || 'Phnom Penh';
-
-  // Tag 29: ACLEDA Merchant
-  const tag29Data = '00' + len(bankId) + bankId + '01' + len(accountNumber) + accountNumber + '0206ACLEDA';
-
-  const poi = Number(amount) > 0 ? '12' : '11';
-
-  let s = '0002010102' + poi
-    + '29' + len(tag29Data) + tag29Data
-    + '391300042CCY01014'
-    + '52045999'
-    + '5303' + cur;
-
-  if (Number(amount) > 0) {
-    s += '54' + len(amt) + amt;
-  }
-
-  s += '5802KH'
-    + '59' + len(beneficiaryName) + beneficiaryName
-    + '6010' + cityName
-    + '62' + len(extra) + extra;
-
-  // Add Tag 99 for Dynamic QR
-  if (poi === '12') {
-    const now = Date.now();
-    const validityMs = (Number(config.validityMinutes) || 15) * 60 * 1000;
-    const expiry = now + validityMs;
-    const tag99Data = '0013' + String(now) + '0113' + String(expiry);
-    s += '99' + len(tag99Data) + tag99Data;
-  }
-
-  s += '6304';
-
-  return s + crc16(s);
-}
-
-/**
- * Generate complete payment object with both banks and QR image URLs
+ * Generate complete payment object with the ABA KHQR text and QR image
  * @param {Object} params
  * @param {number} params.amount - Amount to charge (e.g. 5 or 5000)
  * @param {string} [params.currency='USD'] - 'USD' or 'KHR'
@@ -184,7 +131,6 @@ async function createPayment({ amount, currency = 'USD', billNumber = '', config
   const cleanBill = String(billNumber || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 25);
 
   const abaText = buildABAPayload({ amount, currency: cleanCurrency, config });
-  const acledaText = buildACLEDAPayload({ amount, currency: cleanCurrency, billNumber: cleanBill, config });
 
   // Rule 4: QR Code margin: 3 gives a clean Quiet Zone (>= 2 to 4 modules)
   // Error correction Level H (30%) preserves full data integrity even with centered store logo
@@ -195,13 +141,9 @@ async function createPayment({ amount, currency = 'USD', billNumber = '', config
     color: { dark: '#000000', light: '#ffffff' }
   };
 
-  const [abaImage, acledaImage] = await Promise.all([
-    QRCode.toDataURL(abaText, qrOptions),
-    QRCode.toDataURL(acledaText, qrOptions)
-  ]);
+  const abaImage = await QRCode.toDataURL(abaText, qrOptions);
 
   const abaAccountFormatted = cleanCurrency === 'USD' ? '010 777 268' : '010 777 270';
-  const acledaAccountFormatted = '011 185 517 829 743';
 
   return {
     store: config.storeName,
@@ -219,14 +161,6 @@ async function createPayment({ amount, currency = 'USD', billNumber = '', config
       bakong_id: (config.aba && config.aba.bakongAccountId) || DEFAULT_CONFIG.aba.bakongAccountId,
       text: abaText,
       image: abaImage
-    },
-    acleda: {
-      bank: 'ACLEDA Bank',
-      beneficiary: (config.acleda && config.acleda.beneficiaryName) || DEFAULT_CONFIG.acleda.beneficiaryName,
-      display_name: 'JingJang Store',
-      account: acledaAccountFormatted,
-      text: acledaText,
-      image: acledaImage
     }
   };
 }
@@ -234,7 +168,6 @@ async function createPayment({ amount, currency = 'USD', billNumber = '', config
 module.exports = {
   createPayment,
   buildABAPayload,
-  buildACLEDAPayload,
   crc16,
   DEFAULT_CONFIG
 };

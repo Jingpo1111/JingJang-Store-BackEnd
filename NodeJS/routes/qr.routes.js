@@ -4,7 +4,7 @@ const { createPayment, DEFAULT_CONFIG } = require('../lib/khqr');
 
 /**
  * POST /api/qr
- * Generates both ABA and ACLEDA KHQR codes with images and payloads
+ * Generates the ABA KHQR code with image and payload
  */
 router.post('/', async (req, res) => {
   try {
@@ -37,7 +37,7 @@ router.get('/config', (req, res) => {
     status: 'ok',
     store: DEFAULT_CONFIG.storeName,
     city: DEFAULT_CONFIG.merchantCity,
-    banks: ['ABA Bank', 'ACLEDA Bank']
+    banks: ['ABA Bank']
   });
 });
 

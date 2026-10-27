@@ -194,6 +194,7 @@ router.post('/login', (req, res) => {
             username: user.username,
             email: user.email || '',
             role: user.role || 'customer',
+            avatar: user.avatar || '',
             registerDate: user.register_date || '',
             message: 'Login successful!'
         });
